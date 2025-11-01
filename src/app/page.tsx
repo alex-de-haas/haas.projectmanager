@@ -433,12 +433,12 @@ export default function Home() {
                   className="group border-b border-gray-200 hover:bg-gray-50"
                 >
                   <td
-                    className="p-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10"
+                    className="py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10"
                     style={{ minWidth: "400px", width: "400px" }}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-col gap-1 flex-1 min-w-0">
-                        <div className="font-medium text-sm text-gray-900 flex items-center gap-2 min-w-0">
+                      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                        <div className="font-medium text-sm text-gray-900 flex items-center gap-1.5 min-w-0">
                           <div
                             className="flex items-center justify-center flex-shrink-0"
                             title={task.type === "bug" ? "Bug" : "Task"}
@@ -526,7 +526,7 @@ export default function Home() {
                     return (
                       <td
                         key={dateStr}
-                        className={`p-3 text-center cursor-pointer transition-colors ${
+                        className={`py-2 px-3 text-center cursor-pointer transition-colors ${
                           isToday(day)
                             ? "bg-orange-50 group-hover:bg-orange-100"
                             : isDayOffDay
@@ -561,7 +561,7 @@ export default function Home() {
                     );
                   })}
                   <td
-                    className="p-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-50"
+                    className="py-2 px-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-50"
                     style={{ minWidth: "100px", width: "100px" }}
                   >
                     {formatTimeDisplay(totalHoursByTask[taskIndex])}
