@@ -1,0 +1,183 @@
+# Time Tracker App
+
+A Next.js application for tracking time spent on tasks and bugs with a monthly timeline grid view.
+
+## Features
+
+- 📊 Monthly timeline grid view (tasks as rows, days as columns)
+- ✅ Track time for Tasks and Bugs
+- 🕐 Click-to-edit time entries
+- 📅 Navigate between months
+- 💾 SQLite database for data persistence (zero configuration!)
+- 📈 Daily and task totals
+- 🎨 Clean, responsive UI with visual indicators
+- 🚀 No external database installation required
+- 🔗 **Azure DevOps Integration** - Import tasks and bugs directly from Azure DevOps using Personal Access Token (PAT)
+
+## Prerequisites
+
+- Node.js 18+
+
+## Setup Instructions
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Run Development Server
+
+```bash
+npm run dev
+```
+
+That's it! The SQLite database will be automatically created with sample data on first run.
+
+### 3. Open in Browser
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+The database file (`time_tracker.db`) will be created in the project root directory.
+
+## Usage
+
+### Adding Tasks
+
+#### Manual Entry
+1. Click the "Add Task" button
+2. Enter task title and select type (Task or Bug)
+3. Click "Create Task"
+
+#### Import from Azure DevOps
+1. Click the "⚙️ Settings" button and configure your Azure DevOps credentials
+2. Click the "Import from Azure DevOps" button
+3. Choose to import items assigned to you or specific work item IDs
+4. Imported items will show an "ADO" badge
+
+For detailed Azure DevOps integration setup, see [AZURE_DEVOPS_INTEGRATION.md](./AZURE_DEVOPS_INTEGRATION.md)
+
+### Tracking Time
+
+1. Click any cell in the timeline grid
+2. Enter hours spent (e.g., 2.5 for 2 hours 30 minutes)
+3. Press Enter or click outside to save
+
+### Navigation
+
+- Use "Previous Month" and "Next Month" buttons to navigate
+- View totals for each task (rightmost column)
+- View daily totals (bottom row)
+
+## Database Schema
+
+### Tasks Table
+- `id` - Auto-increment primary key
+- `title` - Task title
+- `type` - Either 'task' or 'bug'
+- `created_at` - Timestamp
+
+### Time Entries Table
+- `id` - Auto-increment primary key
+- `task_id` - Foreign key to tasks
+- `date` - Date of time entry (YYYY-MM-DD)
+- `hours` - Hours spent (decimal)
+- `created_at` - Timestamp
+
+### Database Features
+- ✅ **Auto-initialization**: Database creates itself on first run
+- ✅ **Sample data included**: Pre-loaded with example tasks and time entries
+- ✅ **Single file**: All data stored in `time_tracker.db`
+- ✅ **Portable**: Just copy the .db file to backup or move your data
+
+## Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Database**: SQLite with better-sqlite3
+- **Date Handling**: date-fns
+- **Styling**: Custom CSS
+
+## API Endpoints
+
+### GET /api/tasks?month=YYYY-MM
+Fetch all tasks with time entries for a specific month
+
+### POST /api/tasks
+Create a new task
+```json
+{
+  "title": "Task title",
+  "type": "task" | "bug"
+}
+```
+
+### POST /api/time-entries
+Create or update a time entry
+```json
+{
+  "task_id": 1,
+  "date": "2025-11-01",
+  "hours": 3.5
+}
+```
+
+## Development
+
+```bash
+# Run development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+
+# Run linter
+npm run lint
+```
+
+## 💡 Why SQLite?
+
+- **Zero Configuration**: No database server to install or configure
+- **Portable**: Single file contains all your data
+- **Fast**: Excellent performance for single-user and small team use
+- **Reliable**: Used by millions of applications worldwide
+- **Simple Backups**: Just copy the .db file
+- **Perfect for**: Development, small teams, personal projects, embedded apps
+
+## 📦 Database File Location
+
+Your data is stored in: `/Users/haas/Sources/Haas.ProjectManager/time_tracker.db`
+
+You can:
+- View it with [DB Browser for SQLite](https://sqlitebrowser.org/)
+- Back it up by copying the file
+- Share it with team members
+- Version control it (for small teams)
+
+## 🔍 Troubleshooting
+
+### Database errors
+- The database file (`time_tracker.db`) will be created automatically
+- If you see errors, try deleting `time_tracker.db` and restarting the server
+- Check that you have write permissions in the project directory
+
+### "Module not found" errors
+- Delete `node_modules` and `package-lock.json`
+- Run `npm install` again
+
+### Port 3000 already in use
+- Next.js will automatically try port 3001, 3002, etc.
+- Or manually specify a port: `npm run dev -- -p 3001`
+- Or kill existing process: `lsof -ti:3000 | xargs kill`
+
+### Database backup and restore
+- **Backup**: Simply copy `time_tracker.db` to a safe location
+- **Restore**: Replace `time_tracker.db` with your backup file
+- **Reset**: Delete `time_tracker.db` and restart the server for fresh sample data
+
+## License
+
+MIT
