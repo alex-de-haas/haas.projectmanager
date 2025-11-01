@@ -243,7 +243,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="py-6 container mx-auto">
+      <div className="py-6 mx-auto">
         <Card>
           <CardHeader>
             <Skeleton className="h-9 w-64" />
@@ -272,8 +272,8 @@ export default function Home() {
   };
 
   return (
-    <div className="py-6 container mx-auto max-w-[1400px]">
-      <div className="mb-6 bg-white rounded-lg border border-gray-200 p-6">
+    <div className="py-6 mx-auto">
+      <div className="mb-6 p-6">
         <div className="flex gap-3 items-center justify-between flex-wrap mb-4">
           <div className="flex gap-3 items-center">
             <Button
@@ -352,14 +352,14 @@ export default function Home() {
         </Alert>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-auto max-h-[calc(100vh-280px)]">
+      <div className="overflow-hidden h-[calc(100vh-280px)]">
+        <div className="overflow-auto h-full">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th
                   className="p-3 text-left font-normal text-gray-600 text-sm sticky left-0 bg-gray-50 z-10"
-                  style={{ minWidth: "350px", width: "350px" }}
+                  style={{ minWidth: "400px", width: "400px" }}
                 >
                   {/* Empty for task names */}
                 </th>
@@ -427,173 +427,13 @@ export default function Home() {
                 >
                   {/* Empty for totals */}
                 </th>
-                <th
-                  className="p-3 bg-gray-50"
-                  style={{ minWidth: "40px", width: "40px" }}
-                >
-                  {/* Empty for delete button */}
-                </th>
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task, taskIndex) => (
-                <tr
-                  key={task.id}
-                  className="group border-b border-gray-200 hover:bg-gray-50"
-                >
-                  <td
-                    className="p-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10"
-                    style={{ minWidth: "350px", width: "350px" }}
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="font-medium text-sm text-gray-900 flex items-center gap-2 min-w-0">
-                        <div
-                          className="flex items-center justify-center flex-shrink-0"
-                          title={task.type === "bug" ? "Bug" : "Task"}
-                        >
-                          {task.type === "bug" ? (
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 16 16"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M4.47 2.53a.75.75 0 0 1 1.06 0l.97.97a3.5 3.5 0 0 1 3 0l.97-.97a.75.75 0 1 1 1.06 1.06l-.47.47c.52.56.89 1.28 1.01 2.08H13a.75.75 0 0 1 0 1.5h-.94a3.51 3.51 0 0 1-1.01 2.08l.47.47a.75.75 0 1 1-1.06 1.06l-.97-.97a3.5 3.5 0 0 1-3 0l-.97.97a.75.75 0 0 1-1.06-1.06l.47-.47A3.51 3.51 0 0 1 3.92 7.64H3a.75.75 0 0 1 0-1.5h.92c.12-.8.49-1.52 1.01-2.08l-.46-.47a.75.75 0 0 1 0-1.06ZM6.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm3 1.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0Z"
-                                fill="#dc2626"
-                              />
-                            </svg>
-                          ) : (
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 16 16"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path
-                                d="M2.5 3.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 3h10v1H3V3Z"
-                                fill="#3b82f6"
-                              />
-                              <path
-                                d="M2.5 7.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 7h10v1H3V7ZM2.5 11.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 11h10v1H3v-1Z"
-                                fill="#3b82f6"
-                              />
-                            </svg>
-                          )}
-                        </div>
-                        <div className="truncate min-w-0" title={task.title}>
-                          {task.external_source === "azure_devops" &&
-                          task.external_id ? (
-                            <button
-                              onClick={() => handleTaskClick(task)}
-                              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left truncate block w-full"
-                              title={`${task.title} - Open in Azure DevOps`}
-                            >
-                              {task.title}
-                            </button>
-                          ) : (
-                            task.title
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-500 flex items-center gap-1">
-                        {task.external_source === "azure_devops" &&
-                          task.external_id && (
-                            <Badge
-                              variant="outline"
-                              className="border-blue-200 bg-blue-50 text-blue-700 text-xs h-5"
-                              title={`Azure DevOps Work Item ${task.external_id}`}
-                            >
-                              {task.external_id}
-                            </Badge>
-                          )}
-                        {task.external_source === "azure_devops" && (
-                          <Badge
-                            variant="outline"
-                            className="border-blue-200 bg-blue-50 text-blue-700 text-xs h-5"
-                            title="Azure DevOps"
-                          >
-                            ADO
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  {days.map((day) => {
-                    const dateStr = format(day, "yyyy-MM-dd");
-                    const hours = task.timeEntries[dateStr] || 0;
-                    const isEditing =
-                      editingCell?.taskId === task.id &&
-                      editingCell?.date === dateStr;
-                    const isWeekendDay = isSaturday(day) || isSunday(day);
-                    const isDayOffDay = isDayOff(day);
-
-                    return (
-                      <td
-                        key={dateStr}
-                        className={`p-3 text-center cursor-pointer transition-colors ${
-                          isToday(day)
-                            ? "bg-orange-50"
-                            : isDayOffDay
-                            ? "bg-purple-50"
-                            : isWeekendDay
-                            ? "bg-gray-100"
-                            : ""
-                        } hover:bg-gray-100`}
-                        onClick={() =>
-                          !isEditing && handleCellClick(task.id, dateStr, hours)
-                        }
-                        style={{ minWidth: "100px", width: "100px" }}
-                      >
-                        {isEditing ? (
-                          <Input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleCellSave}
-                            onKeyDown={handleKeyPress}
-                            autoFocus
-                            placeholder="0:00"
-                            className="w-20 text-center h-9 border-2 border-blue-500"
-                          />
-                        ) : hours > 0 ? (
-                          <span className="text-sm font-medium text-gray-900">
-                            {formatTimeDisplay(hours)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td
-                    className="p-3 text-center font-semibold text-sm text-gray-900"
-                    style={{ minWidth: "100px", width: "100px" }}
-                  >
-                    {formatTimeDisplay(totalHoursByTask[taskIndex])}
-                  </td>
-                  <td
-                    className="p-3 text-center"
-                    style={{ minWidth: "40px", width: "40px" }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
-                      onClick={() => handleDeleteTask(task.id, task.title)}
-                      title="Delete task"
-                    >
-                      ✕
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-              <tr className="bg-gray-50 border-t-2 border-gray-300">
+              <tr className="bg-gray-50 border-b-2 border-gray-300">
                 <td
                   className="p-3 sticky left-0 bg-gray-50 z-10"
-                  style={{ minWidth: "350px", width: "350px" }}
+                  style={{ minWidth: "400px", width: "400px" }}
                 >
                   {/* Empty cell */}
                 </td>
@@ -613,7 +453,7 @@ export default function Home() {
                           ? "bg-purple-100 text-purple-900"
                           : isWeekendDay
                           ? "bg-gray-200 text-gray-700"
-                          : "text-gray-900"
+                          : "bg-gray-50 text-gray-900"
                       }`}
                       style={{ minWidth: "100px", width: "100px" }}
                     >
@@ -627,13 +467,146 @@ export default function Home() {
                 >
                   {formatTimeDisplay(grandTotal)}
                 </td>
-                <td
-                  className="p-3 bg-gray-50"
-                  style={{ minWidth: "40px", width: "40px" }}
-                >
-                  {/* Empty cell */}
-                </td>
               </tr>
+              {tasks.map((task, taskIndex) => (
+                <tr
+                  key={task.id}
+                  className="group border-b border-gray-200 hover:bg-gray-50"
+                >
+                  <td
+                    className="p-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10"
+                    style={{ minWidth: "400px", width: "400px" }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col gap-1 flex-1 min-w-0">
+                        <div className="font-medium text-sm text-gray-900 flex items-center gap-2 min-w-0">
+                          <div
+                            className="flex items-center justify-center flex-shrink-0"
+                            title={task.type === "bug" ? "Bug" : "Task"}
+                          >
+                            {task.type === "bug" ? (
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  d="M4.47 2.53a.75.75 0 0 1 1.06 0l.97.97a3.5 3.5 0 0 1 3 0l.97-.97a.75.75 0 1 1 1.06 1.06l-.47.47c.52.56.89 1.28 1.01 2.08H13a.75.75 0 0 1 0 1.5h-.94a3.51 3.51 0 0 1-1.01 2.08l.47.47a.75.75 0 1 1-1.06 1.06l-.97-.97a3.5 3.5 0 0 1-3 0l-.97.97a.75.75 0 0 1-1.06-1.06l.47-.47A3.51 3.51 0 0 1 3.92 7.64H3a.75.75 0 0 1 0-1.5h.92c.12-.8.49-1.52 1.01-2.08l-.46-.47a.75.75 0 0 1 0-1.06ZM6.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm3 1.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0Z"
+                                  fill="#dc2626"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  d="M2.5 3.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 3h10v1H3V3Z"
+                                  fill="#3b82f6"
+                                />
+                                <path
+                                  d="M2.5 7.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 7h10v1H3V7ZM2.5 11.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 11h10v1H3v-1Z"
+                                  fill="#3b82f6"
+                                />
+                              </svg>
+                            )}
+                          </div>
+                          {task.external_source === "azure_devops" &&
+                            task.external_id && (
+                              <Badge
+                                variant="outline"
+                                className="border-blue-200 bg-blue-50 text-blue-700 text-xs h-5 flex-shrink-0"
+                                title={`Azure DevOps Work Item ${parseInt(task.external_id)}`}
+                              >
+                                {parseInt(task.external_id)}
+                              </Badge>
+                            )}
+                          <div className="truncate min-w-0" title={task.title}>
+                            {task.external_source === "azure_devops" &&
+                            task.external_id ? (
+                              <button
+                                onClick={() => handleTaskClick(task)}
+                                className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left truncate block w-full"
+                                title={`${task.title} - Open in Azure DevOps`}
+                              >
+                                {task.title}
+                              </button>
+                            ) : (
+                              task.title
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
+                        onClick={() => handleDeleteTask(task.id, task.title)}
+                        title="Delete task"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  </td>
+                  {days.map((day) => {
+                    const dateStr = format(day, "yyyy-MM-dd");
+                    const hours = task.timeEntries[dateStr] || 0;
+                    const isEditing =
+                      editingCell?.taskId === task.id &&
+                      editingCell?.date === dateStr;
+                    const isWeekendDay = isSaturday(day) || isSunday(day);
+                    const isDayOffDay = isDayOff(day);
+
+                    return (
+                      <td
+                        key={dateStr}
+                        className={`p-3 text-center cursor-pointer transition-colors ${
+                          isToday(day)
+                            ? "bg-orange-50 group-hover:bg-orange-100"
+                            : isDayOffDay
+                            ? "bg-purple-50 group-hover:bg-purple-100"
+                            : isWeekendDay
+                            ? "bg-gray-100 group-hover:bg-gray-200"
+                            : "bg-white group-hover:bg-gray-50"
+                        }`}
+                        onClick={() =>
+                          !isEditing && handleCellClick(task.id, dateStr, hours)
+                        }
+                        style={{ minWidth: "100px", width: "100px" }}
+                      >
+                        {isEditing ? (
+                          <Input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={handleCellSave}
+                            onKeyDown={handleKeyPress}
+                            autoFocus
+                            className="w-20 text-center h-9 border-2 border-blue-500"
+                          />
+                        ) : hours > 0 ? (
+                          <span className="text-sm font-medium text-gray-900">
+                            {formatTimeDisplay(hours)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td
+                    className="p-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-50"
+                    style={{ minWidth: "100px", width: "100px" }}
+                  >
+                    {formatTimeDisplay(totalHoursByTask[taskIndex])}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
