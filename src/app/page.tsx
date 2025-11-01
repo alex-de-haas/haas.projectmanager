@@ -273,7 +273,7 @@ export default function Home() {
 
   return (
     <div className="py-6 mx-auto">
-      <div className="mb-6 p-6">
+      <div className="p-6">
         <div className="flex gap-3 items-center justify-between flex-wrap mb-4">
           <div className="flex gap-3 items-center">
             <Button
@@ -356,11 +356,8 @@ export default function Home() {
         <div className="overflow-auto h-full">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th
-                  className="p-3 text-left font-normal text-gray-600 text-sm sticky left-0 bg-gray-50 z-10"
-                  style={{ minWidth: "400px", width: "400px" }}
-                >
+              <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
+                <th className="p-3 text-left font-normal text-gray-600 text-sm sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
                   {/* Empty for task names */}
                 </th>
                 {days.map((day) => {
@@ -430,44 +427,6 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
-              <tr className="bg-gray-50 border-b-2 border-gray-300">
-                <td
-                  className="p-3 sticky left-0 bg-gray-50 z-10"
-                  style={{ minWidth: "400px", width: "400px" }}
-                >
-                  {/* Empty cell */}
-                </td>
-                {totalHoursByDay.map((total, index) => {
-                  const day = days[index];
-                  const isWeekendDay =
-                    day && (isSaturday(day) || isSunday(day));
-                  const isDayOffDay = day && isDayOff(day);
-
-                  return (
-                    <td
-                      key={index}
-                      className={`p-3 text-center font-semibold text-sm ${
-                        day && isToday(day)
-                          ? "bg-orange-100 text-orange-900"
-                          : isDayOffDay
-                          ? "bg-purple-100 text-purple-900"
-                          : isWeekendDay
-                          ? "bg-gray-200 text-gray-700"
-                          : "bg-gray-50 text-gray-900"
-                      }`}
-                      style={{ minWidth: "100px", width: "100px" }}
-                    >
-                      {total > 0 ? formatTimeDisplay(total) : "0"}
-                    </td>
-                  );
-                })}
-                <td
-                  className="p-3 text-center font-bold text-sm text-gray-900"
-                  style={{ minWidth: "100px", width: "100px" }}
-                >
-                  {formatTimeDisplay(grandTotal)}
-                </td>
-              </tr>
               {tasks.map((task, taskIndex) => (
                 <tr
                   key={task.id}
@@ -521,7 +480,9 @@ export default function Home() {
                               <Badge
                                 variant="outline"
                                 className="border-blue-200 bg-blue-50 text-blue-700 text-xs h-5 flex-shrink-0"
-                                title={`Azure DevOps Work Item ${parseInt(task.external_id)}`}
+                                title={`Azure DevOps Work Item ${parseInt(
+                                  task.external_id
+                                )}`}
                               >
                                 {parseInt(task.external_id)}
                               </Badge>
@@ -607,6 +568,41 @@ export default function Home() {
                   </td>
                 </tr>
               ))}
+              <tr className="bg-gray-50 border-t-2 border-gray-300 sticky bottom-0 z-10">
+                <td className="p-3 sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
+                  {/* Empty cell */}
+                </td>
+                {totalHoursByDay.map((total, index) => {
+                  const day = days[index];
+                  const isWeekendDay =
+                    day && (isSaturday(day) || isSunday(day));
+                  const isDayOffDay = day && isDayOff(day);
+
+                  return (
+                    <td
+                      key={index}
+                      className={`p-3 text-center font-semibold text-sm ${
+                        day && isToday(day)
+                          ? "bg-orange-100 text-orange-900"
+                          : isDayOffDay
+                          ? "bg-purple-100 text-purple-900"
+                          : isWeekendDay
+                          ? "bg-gray-200 text-gray-700"
+                          : "bg-gray-50 text-gray-900"
+                      }`}
+                      style={{ minWidth: "100px", width: "100px" }}
+                    >
+                      {total > 0 ? formatTimeDisplay(total) : "0"}
+                    </td>
+                  );
+                })}
+                <td
+                  className="p-3 text-center font-bold text-sm text-gray-900"
+                  style={{ minWidth: "100px", width: "100px" }}
+                >
+                  {formatTimeDisplay(grandTotal)}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
