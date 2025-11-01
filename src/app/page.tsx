@@ -49,6 +49,7 @@ export default function Home() {
   const [tasks, setTasks] = useState<TaskWithTimeEntries[]>([]);
   const [dayOffs, setDayOffs] = useState<DayOff[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
@@ -74,13 +75,13 @@ export default function Home() {
         });
 
   useEffect(() => {
-    fetchTasks();
+    fetchTasks(true);
     fetchDayOffs();
   }, [currentDate, viewMode]);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (showLoader = false) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const monthParam = format(currentDate, "yyyy-MM");
       const response = await fetch(`/api/tasks?month=${monthParam}`);
       if (!response.ok) throw new Error("Failed to fetch tasks");
@@ -91,7 +92,8 @@ export default function Home() {
       setError("Failed to load tasks. Please check your database connection.");
       console.error(err);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -241,7 +243,7 @@ export default function Home() {
     }
   };
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="py-6 mx-auto">
         <Card>
@@ -334,7 +336,7 @@ export default function Home() {
           <Button onClick={() => setShowImport(true)} variant="outline">
             Import from Azure DevOps
           </Button>
-          <Button onClick={fetchTasks} variant="outline">
+          <Button onClick={() => fetchTasks()} variant="outline">
             Refresh
           </Button>
           <Button onClick={() => setShowSettings(true)} variant="outline">
