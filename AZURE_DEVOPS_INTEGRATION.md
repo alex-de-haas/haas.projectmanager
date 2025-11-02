@@ -22,6 +22,17 @@ This document describes the Azure DevOps integration feature for importing tasks
 - Shows how many tasks were updated
 - Only updates tasks that have changed
 
+### 4. Change Task Status
+- Use the status dropdown for each task to change its status
+- Available statuses: New, Active, Resolved, Closed
+- For tasks linked to Azure DevOps (with 🔄 Synced badge):
+  - Status changes are automatically synced with Azure DevOps
+  - Updates both local database and remote work item
+  - Shows confirmation when sync is successful
+- For local tasks (without Azure DevOps link):
+  - Status changes are saved only locally
+  - No remote synchronization occurs
+
 ## Setup Instructions
 
 ### Step 1: Create a Personal Access Token (PAT)
@@ -93,6 +104,20 @@ New `settings` table:
 - Updates title, type, and status for tasks that have changed
 - Returns count of updated and skipped tasks
 
+#### `/api/azure-devops/update-status`
+- `POST`: Update task status and sync with Azure DevOps
+- Body: `{ "taskId": number, "status": string }`
+- Updates local database status
+- If task is linked to Azure DevOps, also updates the remote work item
+- Returns sync status and any error messages
+- Falls back to local-only update if Azure DevOps sync fails
+
+#### `/api/tasks` (PATCH)
+- `PATCH`: Update task status locally (no Azure DevOps sync)
+- Body: `{ "id": number, "status": string }`
+- Updates only the local database
+- Used for tasks not linked to Azure DevOps
+
 ### Work Item Type Mapping
 
 Azure DevOps work item types are mapped to the app's task types:
@@ -135,10 +160,37 @@ The app checks the `external_id` field before importing. If a work item with the
 - Verify the work items exist in the specified project
 - Ensure the PAT has access to those work items
 
+## Status Change Requirements
+
+### Azure DevOps Permissions
+
+To change work item status, your Personal Access Token (PAT) needs:
+- **Work Items (Read & Write)** permission
+
+If your PAT only has Read permission, status changes will:
+- Update successfully in the local database
+- Show an error message for Azure DevOps sync
+- Not affect the remote work item
+
+To update your PAT permissions:
+1. Go to Azure DevOps → User settings → Personal access tokens
+2. Edit your existing token or create a new one
+3. Enable **Work Items (Read & Write)** scope
+4. Update the PAT in the app settings
+
+### Custom Work Item States
+
+The app provides four common statuses (New, Active, Resolved, Closed), but Azure DevOps work items may use custom process templates with different state names. If you try to set a status that doesn't exist in Azure DevOps:
+- The local database will update successfully
+- Azure DevOps sync will fail with an error
+- An error message will be displayed
+
+**Solution**: Modify the status dropdown in the code to match your Azure DevOps process template states.
+
 ## Future Enhancements
 
 Potential improvements for the integration:
-- Bi-directional sync (update Azure DevOps from the app)
+- Dynamic status loading from Azure DevOps process template
 - Auto-sync on a schedule
 - Import work item descriptions and additional fields
 - Support for other Azure DevOps item types

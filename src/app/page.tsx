@@ -26,6 +26,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AddTaskModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
@@ -307,6 +314,47 @@ export default function Home() {
     }
   };
 
+  const handleStatusChange = async (taskId: number, newStatus: string, hasExternalSource: boolean) => {
+    try {
+      // Use Azure DevOps sync endpoint if task is linked to Azure DevOps
+      const endpoint = hasExternalSource 
+        ? "/api/azure-devops/update-status"
+        : "/api/tasks";
+      
+      const response = await fetch(endpoint, {
+        method: hasExternalSource ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          taskId: taskId,
+          id: taskId,
+          status: newStatus 
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update status");
+
+      const result = await response.json();
+      
+      // Show feedback message
+      if (result.synced) {
+        setSuccessMessage("Status updated and synced with Azure DevOps");
+      } else if (result.localOnly) {
+        setSuccessMessage(result.message || "Status updated locally");
+      } else {
+        setSuccessMessage("Status updated successfully");
+      }
+
+      // Clear message after 3 seconds
+      setTimeout(() => setSuccessMessage(""), 3000);
+
+      await fetchTasks();
+    } catch (err) {
+      setError("Failed to update status");
+      setTimeout(() => setError(""), 3000);
+      console.error(err);
+    }
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     setError("");
@@ -427,7 +475,7 @@ export default function Home() {
             + Add row
           </Button>
           <Button onClick={() => setShowDayOffs(true)} variant="outline">
-            🏖️ Day Offs
+            + Day Offs
           </Button>
           <Button onClick={() => setShowImport(true)} variant="outline">
             Import from Azure DevOps
@@ -437,13 +485,10 @@ export default function Home() {
             variant="outline"
             disabled={isRefreshing}
           >
-            {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh'}
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
           <Button onClick={() => setShowSettings(true)} variant="outline">
-            ⚙️ Settings
-          </Button>
-          <Button variant="default" className="bg-green-600 hover:bg-green-700">
-            Save
+            Settings
           </Button>
         </div>
       </div>
@@ -585,15 +630,6 @@ export default function Home() {
                                 {parseInt(task.external_id)}
                               </Badge>
                             )}
-                          {task.status && (
-                            <Badge
-                              variant="outline"
-                              className="border-gray-200 bg-gray-50 text-gray-700 text-xs h-5 flex-shrink-0"
-                              title={`Status: ${task.status}`}
-                            >
-                              {task.status}
-                            </Badge>
-                          )}
                           <div className="truncate min-w-0" title={task.title}>
                             {task.external_source === "azure_devops" &&
                             task.external_id ? (
@@ -608,6 +644,28 @@ export default function Home() {
                               task.title
                             )}
                           </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Select
+                            value={task.status || ""}
+                            onValueChange={(value) => 
+                              handleStatusChange(
+                                task.id, 
+                                value, 
+                                task.external_source === "azure_devops"
+                              )
+                            }
+                          >
+                            <SelectTrigger className="w-[140px] h-7 text-xs">
+                              <SelectValue placeholder="Set status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="New">New</SelectItem>
+                              <SelectItem value="Active">Active</SelectItem>
+                              <SelectItem value="Resolved">Resolved</SelectItem>
+                              <SelectItem value="Closed">Closed</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
                       <Button

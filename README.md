@@ -13,6 +13,7 @@ A Next.js application for tracking time spent on tasks and bugs with a monthly t
 - 🎨 Clean, responsive UI with visual indicators
 - 🚀 No external database installation required
 - 🔗 **Azure DevOps Integration** - Import tasks and bugs directly from Azure DevOps using Personal Access Token (PAT)
+- 🔄 **Status Synchronization** - Change task status with automatic bi-directional sync to Azure DevOps
 
 ## Prerequisites
 
@@ -56,6 +57,18 @@ The database file (`time_tracker.db`) will be created in the project root direct
 4. Imported items will show an "ADO" badge
 
 For detailed Azure DevOps integration setup, see [AZURE_DEVOPS_INTEGRATION.md](./AZURE_DEVOPS_INTEGRATION.md)
+
+### Changing Task Status
+
+1. Use the status dropdown next to each task
+2. Select a status: New, Active, Resolved, or Closed
+3. For Azure DevOps-linked tasks (with 🔄 Synced badge):
+   - Status changes sync automatically with Azure DevOps
+   - You'll see a confirmation message when sync is successful
+4. For local tasks:
+   - Status changes are saved only locally
+
+**Note**: Azure DevOps sync requires **Work Items (Read & Write)** permission on your PAT. See [AZURE_DEVOPS_INTEGRATION.md](./AZURE_DEVOPS_INTEGRATION.md) for details.
 
 ### Tracking Time
 

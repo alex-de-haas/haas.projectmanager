@@ -4,11 +4,13 @@ This is a Next.js application designed to help users manage projects, tasks, and
 
 ### Folders Structure
 
-- app/ — Used for App Router.
-- features/ — Keeps related logic together (components, hooks, services).
-- lib/ — Utilities, configs, constants, and API clients.
-- types/ — Shared types/interfaces for TypeScript safety.
-- public/ — For static assets served at /.
+- docs/ — Documentation files.
+- src/ — Application source code.
+  - app/ — Used for App Router.
+  - features/ — Keeps related logic together (components, hooks, services).
+  - lib/ — Utilities, configs, constants, and API clients.
+  - types/ — Shared types/interfaces for TypeScript safety.
+  - public/ — For static assets served at /.
 
 ### Component Structure
 

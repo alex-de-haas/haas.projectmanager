@@ -85,6 +85,47 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, status } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Task ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!status) {
+      return NextResponse.json(
+        { error: 'Status is required' },
+        { status: 400 }
+      );
+    }
+
+    const result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+
+    if (result.changes === 0) {
+      return NextResponse.json(
+        { error: 'Task not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      { message: 'Task updated successfully' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Database error:', error);
+    return NextResponse.json(
+      { error: 'Failed to update task' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
