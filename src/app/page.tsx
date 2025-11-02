@@ -15,7 +15,7 @@ import {
   isSaturday,
   isSunday,
 } from "date-fns";
-import type { TaskWithTimeEntries, DayOff } from "@/types";
+import type { TaskWithTimeEntries, DayOff, AzureDevOpsWorkItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1343,44 +1343,90 @@ function ImportModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [importMode, setImportMode] = useState<"assignedToMe" | "specific">(
-    "assignedToMe"
-  );
-  const [workItemIds, setWorkItemIds] = useState("");
+  const [workItems, setWorkItems] = useState<AzureDevOpsWorkItem[]>([]);
+  const [filteredWorkItems, setFilteredWorkItems] = useState<AzureDevOpsWorkItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [filterText, setFilterText] = useState("");
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "info">(
     "info"
   );
 
+  useEffect(() => {
+    fetchWorkItems();
+  }, []);
+
+  useEffect(() => {
+    if (filterText.trim() === "") {
+      setFilteredWorkItems(workItems);
+    } else {
+      const searchText = filterText.toLowerCase();
+      const filtered = workItems.filter(
+        (item) =>
+          item.id.toString().includes(searchText) ||
+          item.title.toLowerCase().includes(searchText)
+      );
+      setFilteredWorkItems(filtered);
+    }
+  }, [filterText, workItems]);
+
+  const fetchWorkItems = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/azure-devops/work-items");
+      const data = await response.json();
+
+      if (response.ok) {
+        setWorkItems(data.workItems || []);
+        setFilteredWorkItems(data.workItems || []);
+      } else {
+        setMessage(`✗ Failed to fetch work items: ${data.error || "Unknown error"}`);
+        setMessageType("error");
+      }
+    } catch (err) {
+      setMessage("✗ Failed to fetch work items: Network error");
+      setMessageType("error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredWorkItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredWorkItems.map((item) => item.id)));
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
   const handleImport = async () => {
+    if (selectedIds.size === 0) {
+      setMessage("Please select at least one work item to import");
+      setMessageType("error");
+      return;
+    }
+
     setImporting(true);
-    setMessage("Importing work items...");
+    setMessage("Importing selected work items...");
     setMessageType("info");
 
     try {
-      const body: { assignedToMe?: boolean; workItemIds?: number[] } = {};
-
-      if (importMode === "assignedToMe") {
-        body.assignedToMe = true;
-      } else {
-        const ids = workItemIds
-          .split(",")
-          .map((id) => parseInt(id.trim()))
-          .filter((id) => !isNaN(id));
-        if (ids.length === 0) {
-          setMessage("Please enter valid work item IDs");
-          setMessageType("error");
-          setImporting(false);
-          return;
-        }
-        body.workItemIds = ids;
-      }
-
       const response = await fetch("/api/azure-devops/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ workItemIds: Array.from(selectedIds) }),
       });
 
       const data = await response.json();
@@ -1407,59 +1453,101 @@ function ImportModal({
     }
   };
 
+  const allSelected = filteredWorkItems.length > 0 && selectedIds.size === filteredWorkItems.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < filteredWorkItems.length;
+
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[800px] max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>Import from Azure DevOps</DialogTitle>
           <DialogDescription>
-            Import tasks and bugs from your Azure DevOps project
+            Select work items to import from your Azure DevOps project
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Import Mode</Label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="importMode"
-                  value="assignedToMe"
-                  checked={importMode === "assignedToMe"}
-                  onChange={() => setImportMode("assignedToMe")}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm">
-                  Import all work items assigned to me (not closed/removed)
-                </span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="importMode"
-                  value="specific"
-                  checked={importMode === "specific"}
-                  onChange={() => setImportMode("specific")}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm">Import specific work item IDs</span>
-              </label>
-            </div>
+            <Label htmlFor="filter">Search by ID or Title</Label>
+            <Input
+              id="filter"
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Filter by work item ID or title..."
+              disabled={loading || importing}
+            />
           </div>
 
-          {importMode === "specific" && (
+          {loading ? (
             <div className="space-y-2">
-              <Label htmlFor="workItemIds">Work Item IDs</Label>
-              <Input
-                id="workItemIds"
-                type="text"
-                value={workItemIds}
-                onChange={(e) => setWorkItemIds(e.target.value)}
-                placeholder="e.g., 123, 456, 789"
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter work item IDs separated by commas
-              </p>
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : filteredWorkItems.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {workItems.length === 0
+                ? "No work items found assigned to you"
+                : "No work items match your filter"}
+            </div>
+          ) : (
+            <div className="border rounded-md max-h-[400px] overflow-y-auto">
+              <table className="w-full">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left w-12">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someSelected;
+                        }}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4"
+                        disabled={importing}
+                      />
+                    </th>
+                    <th className="p-2 text-left w-20">ID</th>
+                    <th className="p-2 text-left">Title</th>
+                    <th className="p-2 text-left w-24">Type</th>
+                    <th className="p-2 text-left w-24">State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredWorkItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="border-t hover:bg-muted/50 cursor-pointer"
+                      onClick={() => toggleSelect(item.id)}
+                    >
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => toggleSelect(item.id)}
+                          className="h-4 w-4"
+                          disabled={importing}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                      <td className="p-2 font-mono text-sm">{item.id}</td>
+                      <td className="p-2">{item.title}</td>
+                      <td className="p-2">
+                        <Badge variant="outline">{item.type}</Badge>
+                      </td>
+                      <td className="p-2">
+                        <Badge variant="secondary">{item.state}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selectedIds.size > 0 && (
+            <div className="text-sm text-muted-foreground">
+              {selectedIds.size} work item(s) selected
             </div>
           )}
 
@@ -1490,10 +1578,10 @@ function ImportModal({
             <Button
               type="button"
               onClick={handleImport}
-              disabled={importing}
+              disabled={importing || selectedIds.size === 0 || loading}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {importing ? "Importing..." : "Import"}
+              {importing ? "Importing..." : `Import ${selectedIds.size > 0 ? `(${selectedIds.size})` : ""}`}
             </Button>
           </DialogFooter>
         </div>
