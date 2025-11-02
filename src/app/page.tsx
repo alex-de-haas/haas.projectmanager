@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import type { KeyboardEvent } from "react";
 import {
   format,
   startOfMonth,
@@ -8,7 +9,6 @@ import {
   startOfWeek,
   endOfWeek,
   eachDayOfInterval,
-  isWeekend,
   isToday,
   addWeeks,
   addMonths,
@@ -45,6 +45,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
+
 export default function Home() {
   const [tasks, setTasks] = useState<TaskWithTimeEntries[]>([]);
   const [dayOffs, setDayOffs] = useState<DayOff[]>([]);
@@ -64,54 +66,57 @@ export default function Home() {
     date: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const monthParam = useMemo(
+    () => format(currentDate, "yyyy-MM"),
+    [currentDate]
+  );
 
-  const days =
-    viewMode === "week"
-      ? eachDayOfInterval({
-          start: startOfWeek(currentDate, { weekStartsOn: 1 }), // Monday
-          end: endOfWeek(currentDate, { weekStartsOn: 1 }),
-        })
-      : eachDayOfInterval({
-          start: startOfMonth(currentDate),
-          end: endOfMonth(currentDate),
-        });
+  const dayOffRange = useMemo(() => {
+    if (viewMode === "week") {
+      return {
+        startDate: format(
+          startOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+          "yyyy-MM-dd"
+        ),
+        endDate: format(
+          endOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+          "yyyy-MM-dd"
+        ),
+      };
+    }
 
-  useEffect(() => {
-    fetchTasks(true);
-    fetchDayOffs();
+    return {
+      startDate: format(startOfMonth(currentDate), "yyyy-MM-dd"),
+      endDate: format(endOfMonth(currentDate), "yyyy-MM-dd"),
+    };
   }, [currentDate, viewMode]);
 
-  const fetchTasks = async (showLoader = false) => {
-    try {
-      if (showLoader) setLoading(true);
-      const monthParam = format(currentDate, "yyyy-MM");
-      const response = await fetch(`/api/tasks?month=${monthParam}`);
-      if (!response.ok) throw new Error("Failed to fetch tasks");
-      const data = await response.json();
-      setTasks(data);
-      setError("");
-    } catch (err) {
-      setError("Failed to load tasks. Please check your database connection.");
-      console.error(err);
-    } finally {
-      if (showLoader) setLoading(false);
-      setInitialLoading(false);
-    }
-  };
+  const fetchTasks = useCallback(
+    async (showLoader = false) => {
+      try {
+        if (showLoader) setLoading(true);
+        const response = await fetch(`/api/tasks?month=${monthParam}`);
+        if (!response.ok) throw new Error("Failed to fetch tasks");
+        const data = await response.json();
+        setTasks(data);
+        setError("");
+      } catch (err) {
+        setError(
+          "Failed to load tasks. Please check your database connection."
+        );
+        console.error(err);
+      } finally {
+        if (showLoader) setLoading(false);
+        setInitialLoading(false);
+      }
+    },
+    [monthParam]
+  );
 
-  const fetchDayOffs = async () => {
+  const fetchDayOffs = useCallback(async () => {
     try {
-      const startDate =
-        viewMode === "week"
-          ? format(startOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd")
-          : format(startOfMonth(currentDate), "yyyy-MM-dd");
-      const endDate =
-        viewMode === "week"
-          ? format(endOfWeek(currentDate, { weekStartsOn: 1 }), "yyyy-MM-dd")
-          : format(endOfMonth(currentDate), "yyyy-MM-dd");
-
       const response = await fetch(
-        `/api/day-offs?startDate=${startDate}&endDate=${endDate}`
+        `/api/day-offs?startDate=${dayOffRange.startDate}&endDate=${dayOffRange.endDate}`
       );
       if (!response.ok) throw new Error("Failed to fetch day-offs");
       const data = await response.json();
@@ -119,23 +124,86 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to load day-offs:", err);
     }
-  };
+  }, [dayOffRange]);
 
-  const isDayOff = (date: Date): boolean => {
-    const dateStr = format(date, "yyyy-MM-dd");
-    return dayOffs.some((dayOff) => dayOff.date === dateStr);
-  };
+  useEffect(() => {
+    fetchTasks(true);
+  }, [fetchTasks]);
 
-  const handleCellClick = (
-    taskId: number,
-    date: string,
-    currentHours: number
-  ) => {
-    setEditingCell({ taskId, date });
-    setEditValue(currentHours > 0 ? currentHours.toString() : "");
-  };
+  useEffect(() => {
+    fetchDayOffs();
+  }, [fetchDayOffs]);
 
-  const handleCellSave = async () => {
+  const dayOffMap = useMemo(
+    () => new Map(dayOffs.map((dayOff) => [dayOff.date, dayOff] as const)),
+    [dayOffs]
+  );
+
+  const calendarDays = useMemo(
+    () => {
+      const interval =
+        viewMode === "week"
+          ? {
+              start: startOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+              end: endOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+            }
+          : {
+              start: startOfMonth(currentDate),
+              end: endOfMonth(currentDate),
+            };
+
+      return eachDayOfInterval(interval).map((date) => {
+        const key = format(date, "yyyy-MM-dd");
+        const dayOff = dayOffMap.get(key);
+        return {
+          date,
+          key,
+          dayOff,
+          isDayOff: Boolean(dayOff),
+          isWeekend: isSaturday(date) || isSunday(date),
+          isToday: isToday(date),
+        };
+      });
+    },
+    [currentDate, viewMode, dayOffMap]
+  );
+
+  const totalHoursByDay = useMemo(
+    () =>
+      calendarDays.map((day) =>
+        tasks.reduce(
+          (sum, task) => sum + (task.timeEntries[day.key] || 0),
+          0
+        )
+      ),
+    [calendarDays, tasks]
+  );
+
+  const totalHoursByTask = useMemo(
+    () =>
+      tasks.map((task) =>
+        Object.values(task.timeEntries).reduce(
+          (sum, hours) => sum + hours,
+          0
+        )
+      ),
+    [tasks]
+  );
+
+  const grandTotal = useMemo(
+    () => totalHoursByTask.reduce((sum, hours) => sum + hours, 0),
+    [totalHoursByTask]
+  );
+
+  const handleCellClick = useCallback(
+    (taskId: number, date: string, currentHours: number) => {
+      setEditingCell({ taskId, date });
+      setEditValue(currentHours > 0 ? currentHours.toString() : "");
+    },
+    []
+  );
+
+  const handleCellSave = useCallback(async () => {
     if (!editingCell) return;
 
     const hours = parseFloat(editValue) || 0;
@@ -160,38 +228,47 @@ export default function Home() {
       alert("Failed to save time entry");
       console.error(err);
     }
-  };
+  }, [editValue, editingCell, fetchTasks]);
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleCellSave();
-    } else if (e.key === "Escape") {
-      setEditingCell(null);
-      setEditValue("");
-    }
-  };
-
-  const changeDate = (offset: number) => {
-    if (viewMode === "week") {
-      setCurrentDate(addWeeks(currentDate, offset));
-    } else {
-      setCurrentDate(addMonths(currentDate, offset));
-    }
-  };
-
-  const totalHoursByDay = days.map((day) => {
-    const dateStr = format(day, "yyyy-MM-dd");
-    return tasks.reduce(
-      (sum, task) => sum + (task.timeEntries[dateStr] || 0),
-      0
-    );
-  });
-
-  const totalHoursByTask = tasks.map((task) =>
-    Object.values(task.timeEntries).reduce((sum, hours) => sum + hours, 0)
+  const handleKeyPress = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        handleCellSave();
+      } else if (e.key === "Escape") {
+        setEditingCell(null);
+        setEditValue("");
+      }
+    },
+    [handleCellSave]
   );
 
-  const grandTotal = totalHoursByTask.reduce((sum, hours) => sum + hours, 0);
+  const changeDate = useCallback(
+    (offset: number) => {
+      if (viewMode === "week") {
+        setCurrentDate((prev) => addWeeks(prev, offset));
+      } else {
+        setCurrentDate((prev) => addMonths(prev, offset));
+      }
+    },
+    [viewMode]
+  );
+
+  const weekStart = useMemo(
+    () => startOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+    [currentDate]
+  );
+  const weekEnd = useMemo(
+    () => endOfWeek(currentDate, WEEK_STARTS_ON_MONDAY),
+    [currentDate]
+  );
+
+  const formatTimeDisplay = useCallback((hours: number): string => {
+    if (hours === 0) return "";
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}:${m.toString().padStart(2, "0")}`;
+  }, []);
 
   const handleTaskClick = async (task: TaskWithTimeEntries) => {
     if (task.external_source === "azure_devops" && task.external_id) {
@@ -252,32 +329,34 @@ export default function Home() {
     
     try {
       // First, refresh Azure DevOps tasks
-      const refreshResponse = await fetch('/api/azure-devops/refresh', {
-        method: 'POST',
+      const refreshResponse = await fetch("/api/azure-devops/refresh", {
+        method: "POST",
       });
 
       if (refreshResponse.ok) {
         const result = await refreshResponse.json();
-        console.log('Azure DevOps refresh result:', result);
+        console.log("Azure DevOps refresh result:", result);
         
         if (result.updated > 0) {
           // Show success message
           setSuccessMessage(`Successfully updated ${result.updated} task(s) from Azure DevOps`);
           setTimeout(() => setSuccessMessage(""), 5000);
         } else if (result.skipped > 0) {
-          setSuccessMessage(`All ${result.skipped} imported task(s) are up to date`);
+          setSuccessMessage(
+            `All ${result.skipped} imported task(s) are up to date`
+          );
           setTimeout(() => setSuccessMessage(""), 5000);
         }
       } else if (refreshResponse.status === 400) {
         // Settings not configured, silently skip
-        console.log('Azure DevOps settings not configured, skipping refresh');
+        console.log("Azure DevOps settings not configured, skipping refresh");
       } else {
         const errorData = await refreshResponse.json();
-        setError(errorData.error || 'Failed to refresh Azure DevOps tasks');
+        setError(errorData.error || "Failed to refresh Azure DevOps tasks");
       }
     } catch (err) {
-      console.error('Error refreshing Azure DevOps tasks:', err);
-      setError('An error occurred while refreshing tasks');
+      console.error("Error refreshing Azure DevOps tasks:", err);
+      setError("An error occurred while refreshing tasks");
     } finally {
       // Always fetch latest tasks from database
       await fetchTasks();
@@ -304,16 +383,6 @@ export default function Home() {
       </div>
     );
   }
-
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-
-  const formatTimeDisplay = (hours: number): string => {
-    if (hours === 0) return "";
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    return m > 0 ? `${h}:${m.toString().padStart(2, "0")}` : `${h}:00`;
-  };
 
   return (
     <div className="py-6 mx-auto">
@@ -414,56 +483,46 @@ export default function Home() {
                 <th className="p-3 text-left font-normal text-gray-600 text-sm sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
                   {/* Empty for task names */}
                 </th>
-                {days.map((day) => {
-                  const isWeekendDay = isSaturday(day) || isSunday(day);
-                  const isDayOffDay = isDayOff(day);
-                  const dayOffInfo = dayOffs.find(
-                    (d) => d.date === format(day, "yyyy-MM-dd")
-                  );
+                {calendarDays.map((day) => {
+                  const headerClass = day.isToday
+                    ? "bg-orange-100"
+                    : day.isDayOff
+                    ? "bg-purple-100"
+                    : day.isWeekend
+                    ? "bg-gray-200"
+                    : "bg-gray-50";
+
+                  const title = day.isDayOff
+                    ? day.dayOff?.description || "Day off"
+                    : "";
+
+                  const textClass = day.isToday
+                    ? "text-orange-600"
+                    : day.isDayOff
+                    ? "text-purple-700"
+                    : day.isWeekend
+                    ? "text-gray-600"
+                    : "text-gray-900";
+
+                  const subTextClass = day.isToday
+                    ? "text-orange-600"
+                    : day.isDayOff
+                    ? "text-purple-600"
+                    : "text-gray-500";
 
                   return (
                     <th
-                      key={day.toString()}
-                      className={`p-3 text-center font-normal text-sm ${
-                        isToday(day)
-                          ? "bg-orange-100"
-                          : isDayOffDay
-                          ? "bg-purple-100"
-                          : isWeekendDay
-                          ? "bg-gray-200"
-                          : "bg-gray-50"
-                      }`}
+                      key={day.key}
+                      className={`p-3 text-center font-normal text-sm ${headerClass}`}
                       style={{ minWidth: "100px", width: "100px" }}
-                      title={
-                        isDayOffDay ? dayOffInfo?.description || "Day off" : ""
-                      }
+                      title={title}
                     >
-                      <div
-                        className={`font-medium ${
-                          isToday(day)
-                            ? "text-orange-600"
-                            : isDayOffDay
-                            ? "text-purple-700"
-                            : isWeekendDay
-                            ? "text-gray-600"
-                            : "text-gray-900"
-                        }`}
-                      >
-                        {format(day, "EEE")}
+                      <div className={`font-medium ${textClass}`}>
+                        {format(day.date, "EEE")}
                       </div>
-                      <div
-                        className={`text-xs ${
-                          isToday(day)
-                            ? "text-orange-600"
-                            : isDayOffDay
-                            ? "text-purple-600"
-                            : isWeekendDay
-                            ? "text-gray-500"
-                            : "text-gray-500"
-                        }`}
-                      >
-                        {format(day, "dd MMM")}
-                        {isDayOffDay && (
+                      <div className={`text-xs ${subTextClass}`}>
+                        {format(day.date, "dd MMM")}
+                        {day.isDayOff && (
                           <div className="text-[10px] font-medium">
                             🏖️ Day Off
                           </div>
@@ -577,29 +636,26 @@ export default function Home() {
                       </Button>
                     </div>
                   </td>
-                  {days.map((day) => {
-                    const dateStr = format(day, "yyyy-MM-dd");
-                    const hours = task.timeEntries[dateStr] || 0;
+                  {calendarDays.map((day) => {
+                    const hours = task.timeEntries[day.key] || 0;
                     const isEditing =
                       editingCell?.taskId === task.id &&
-                      editingCell?.date === dateStr;
-                    const isWeekendDay = isSaturday(day) || isSunday(day);
-                    const isDayOffDay = isDayOff(day);
+                      editingCell?.date === day.key;
+
+                    const cellClass = day.isToday
+                      ? "bg-orange-50 group-hover:bg-orange-200"
+                      : day.isDayOff
+                      ? "bg-purple-50 group-hover:bg-purple-200"
+                      : day.isWeekend
+                      ? "bg-gray-100 group-hover:bg-gray-300"
+                      : "bg-white group-hover:bg-gray-100";
 
                     return (
                       <td
-                        key={dateStr}
-                        className={`py-2 px-3 text-center cursor-pointer transition-colors ${
-                          isToday(day)
-                            ? "bg-orange-50 group-hover:bg-orange-200"
-                            : isDayOffDay
-                            ? "bg-purple-50 group-hover:bg-purple-200"
-                            : isWeekendDay
-                            ? "bg-gray-100 group-hover:bg-gray-300"
-                            : "bg-white group-hover:bg-gray-100"
-                        }`}
+                        key={day.key}
+                        className={`py-2 px-3 text-center cursor-pointer transition-colors ${cellClass}`}
                         onClick={() =>
-                          !isEditing && handleCellClick(task.id, dateStr, hours)
+                          !isEditing && handleCellClick(task.id, day.key, hours)
                         }
                         style={{ minWidth: "100px", width: "100px" }}
                       >
@@ -635,24 +691,20 @@ export default function Home() {
                 <td className="p-3 sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
                   {/* Empty cell */}
                 </td>
-                {totalHoursByDay.map((total, index) => {
-                  const day = days[index];
-                  const isWeekendDay =
-                    day && (isSaturday(day) || isSunday(day));
-                  const isDayOffDay = day && isDayOff(day);
+                {calendarDays.map((day, index) => {
+                  const total = totalHoursByDay[index];
+                  const cellClass = day.isToday
+                    ? "bg-orange-100 text-orange-900"
+                    : day.isDayOff
+                    ? "bg-purple-100 text-purple-900"
+                    : day.isWeekend
+                    ? "bg-gray-200 text-gray-700"
+                    : "bg-gray-50 text-gray-900";
 
                   return (
                     <td
-                      key={index}
-                      className={`p-3 text-center font-semibold text-sm ${
-                        day && isToday(day)
-                          ? "bg-orange-100 text-orange-900"
-                          : isDayOffDay
-                          ? "bg-purple-100 text-purple-900"
-                          : isWeekendDay
-                          ? "bg-gray-200 text-gray-700"
-                          : "bg-gray-50 text-gray-900"
-                      }`}
+                      key={day.key}
+                      className={`p-3 text-center font-semibold text-sm ${cellClass}`}
                       style={{ minWidth: "100px", width: "100px" }}
                     >
                       {total > 0 ? formatTimeDisplay(total) : "0"}
