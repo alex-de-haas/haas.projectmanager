@@ -4,6 +4,7 @@ export interface Task {
   id: number;
   title: string;
   type: TaskType;
+  status?: string | null;
   external_id?: string | null;
   external_source?: string | null;
   created_at: Date;

@@ -4,16 +4,8 @@ import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
 
-interface ImportRequest {
-  workItemIds?: number[];
-  query?: string;
-  assignedToMe?: boolean;
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const body: ImportRequest = await request.json();
-
     // Get Azure DevOps settings
     const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
     
@@ -41,6 +33,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get all tasks imported from Azure DevOps
+    const importedTasks = db.prepare(
+      'SELECT * FROM tasks WHERE external_source = ? AND external_id IS NOT NULL'
+    ).all('azure_devops') as Task[];
+
+    if (importedTasks.length === 0) {
+      return NextResponse.json({ 
+        updated: 0, 
+        skipped: 0, 
+        message: 'No imported tasks found to refresh' 
+      });
+    }
+
     // Create Azure DevOps connection
     const orgUrl = `https://dev.azure.com/${settings.organization}`;
     const authHandler = azdev.getPersonalAccessTokenHandler(settings.pat);
@@ -48,40 +53,17 @@ export async function POST(request: NextRequest) {
 
     const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
 
-    let workItemIds: number[] = [];
-
-    // Determine which work items to import
-    if (body.workItemIds && body.workItemIds.length > 0) {
-      workItemIds = body.workItemIds;
-    } else if (body.assignedToMe) {
-      // Query for work items assigned to current user
-      const wiql = {
-        query: `
-          SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State]
-          FROM WorkItems
-          WHERE [System.AssignedTo] = @Me
-            AND [System.State] <> 'Closed'
-            AND [System.State] <> 'Removed'
-          ORDER BY [System.ChangedDate] DESC
-        `
-      };
-
-      const queryResult = await witApi.queryByWiql(wiql, { project: settings.project });
-      workItemIds = queryResult?.workItems?.map(wi => wi.id!).filter(Boolean) || [];
-    } else if (body.query) {
-      // Custom WIQL query
-      const wiql = { query: body.query };
-      const queryResult = await witApi.queryByWiql(wiql, { project: settings.project });
-      workItemIds = queryResult?.workItems?.map(wi => wi.id!).filter(Boolean) || [];
-    } else {
-      return NextResponse.json(
-        { error: 'No work items specified. Provide workItemIds, set assignedToMe=true, or provide a WIQL query.' },
-        { status: 400 }
-      );
-    }
+    // Extract work item IDs
+    const workItemIds = importedTasks
+      .map(task => parseInt(task.external_id!))
+      .filter(id => !isNaN(id));
 
     if (workItemIds.length === 0) {
-      return NextResponse.json({ imported: 0, skipped: 0, message: 'No work items found to import' });
+      return NextResponse.json({ 
+        updated: 0, 
+        skipped: 0, 
+        message: 'No valid work item IDs found' 
+      });
     }
 
     // Fetch work item details
@@ -93,7 +75,7 @@ export async function POST(request: NextRequest) {
       undefined
     );
 
-    const imported: Task[] = [];
+    const updated: Array<{ id: number; title: string; status: string }> = [];
     const skipped: Array<{ id: number; reason: string }> = [];
 
     for (const workItem of workItems || []) {
@@ -104,45 +86,56 @@ export async function POST(request: NextRequest) {
       const title = workItem.fields['System.Title'] as string || `Work Item ${workItem.id}`;
       const workItemType = (workItem.fields['System.WorkItemType'] as string || 'Task').toLowerCase();
       const status = workItem.fields['System.State'] as string || null;
-      
+
       // Map Azure DevOps work item types to our task types
       let taskType: 'task' | 'bug' = 'task';
       if (workItemType === 'bug') {
         taskType = 'bug';
       }
 
-      // Check if already imported
-      const existing = db.prepare('SELECT id FROM tasks WHERE external_id = ?').get(workItem.id);
+      // Find the corresponding task in our database
+      const task = importedTasks.find(t => parseInt(t.external_id!) === workItem.id);
       
-      if (existing) {
-        skipped.push({ id: workItem.id, reason: 'Already imported' });
+      if (!task) {
+        skipped.push({ id: workItem.id, reason: 'Not found in database' });
         continue;
       }
 
-      // Insert task
+      // Check if anything changed
+      const hasChanges = 
+        task.title !== title || 
+        task.type !== taskType || 
+        task.status !== status;
+
+      if (!hasChanges) {
+        skipped.push({ id: workItem.id, reason: 'No changes detected' });
+        continue;
+      }
+
+      // Update task
       const stmt = db.prepare(`
-        INSERT INTO tasks (title, type, status, external_id, external_source)
-        VALUES (?, ?, ?, ?, 'azure_devops')
+        UPDATE tasks 
+        SET title = ?, type = ?, status = ?
+        WHERE id = ?
       `);
 
-      const result = stmt.run(title, taskType, status, workItem.id);
+      stmt.run(title, taskType, status, task.id);
       
-      const newTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
-      imported.push(newTask);
+      updated.push({ id: workItem.id, title, status: status || 'N/A' });
     }
 
     return NextResponse.json({
-      imported: imported.length,
+      updated: updated.length,
       skipped: skipped.length,
-      tasks: imported,
+      updatedTasks: updated,
       skippedDetails: skipped
     });
 
   } catch (error) {
-    console.error('Azure DevOps import error:', error);
+    console.error('Azure DevOps refresh error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to import from Azure DevOps', details: errorMessage },
+      { error: 'Failed to refresh from Azure DevOps', details: errorMessage },
       { status: 500 }
     );
   }

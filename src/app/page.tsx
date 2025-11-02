@@ -51,12 +51,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const [showAddTask, setShowAddTask] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showDayOffs, setShowDayOffs] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
     date: string;
@@ -243,6 +245,46 @@ export default function Home() {
     }
   };
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setError("");
+    setSuccessMessage("");
+    
+    try {
+      // First, refresh Azure DevOps tasks
+      const refreshResponse = await fetch('/api/azure-devops/refresh', {
+        method: 'POST',
+      });
+
+      if (refreshResponse.ok) {
+        const result = await refreshResponse.json();
+        console.log('Azure DevOps refresh result:', result);
+        
+        if (result.updated > 0) {
+          // Show success message
+          setSuccessMessage(`Successfully updated ${result.updated} task(s) from Azure DevOps`);
+          setTimeout(() => setSuccessMessage(""), 5000);
+        } else if (result.skipped > 0) {
+          setSuccessMessage(`All ${result.skipped} imported task(s) are up to date`);
+          setTimeout(() => setSuccessMessage(""), 5000);
+        }
+      } else if (refreshResponse.status === 400) {
+        // Settings not configured, silently skip
+        console.log('Azure DevOps settings not configured, skipping refresh');
+      } else {
+        const errorData = await refreshResponse.json();
+        setError(errorData.error || 'Failed to refresh Azure DevOps tasks');
+      }
+    } catch (err) {
+      console.error('Error refreshing Azure DevOps tasks:', err);
+      setError('An error occurred while refreshing tasks');
+    } finally {
+      // Always fetch latest tasks from database
+      await fetchTasks();
+      setIsRefreshing(false);
+    }
+  };
+
   if (initialLoading) {
     return (
       <div className="py-6 mx-auto">
@@ -336,8 +378,12 @@ export default function Home() {
           <Button onClick={() => setShowImport(true)} variant="outline">
             Import from Azure DevOps
           </Button>
-          <Button onClick={() => fetchTasks()} variant="outline">
-            Refresh
+          <Button 
+            onClick={handleRefresh} 
+            variant="outline"
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh'}
           </Button>
           <Button onClick={() => setShowSettings(true)} variant="outline">
             ⚙️ Settings
@@ -351,6 +397,12 @@ export default function Home() {
       {error && (
         <Alert variant="destructive" className="mb-6">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert className="mb-6 border-green-200 bg-green-50 text-green-800">
+          <AlertDescription>{successMessage}</AlertDescription>
         </Alert>
       )}
 
@@ -489,6 +541,15 @@ export default function Home() {
                                 {parseInt(task.external_id)}
                               </Badge>
                             )}
+                          {task.status && (
+                            <Badge
+                              variant="outline"
+                              className="border-gray-200 bg-gray-50 text-gray-700 text-xs h-5 flex-shrink-0"
+                              title={`Status: ${task.status}`}
+                            >
+                              {task.status}
+                            </Badge>
+                          )}
                           <div className="truncate min-w-0" title={task.title}>
                             {task.external_source === "azure_devops" &&
                             task.external_id ? (
@@ -952,7 +1013,9 @@ function DayOffsModal({
   onSuccess: () => void;
   currentDayOffs: DayOff[];
 }) {
+  const [isRangeMode, setIsRangeMode] = useState(false);
   const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
@@ -963,24 +1026,79 @@ function DayOffsModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!date) return;
+    if (isRangeMode && !endDate) return;
+    if (isRangeMode && endDate < date) {
+      setMessage("✗ End date must be after start date");
+      setMessageType("error");
+      return;
+    }
 
     setSubmitting(true);
     setMessage("");
+    
     try {
-      const response = await fetch("/api/day-offs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, description: description || null }),
-      });
+      if (isRangeMode) {
+        // Create day-offs for date range
+        const start = new Date(date);
+        const end = new Date(endDate);
+        const dates: string[] = [];
+        
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          dates.push(format(d, "yyyy-MM-dd"));
+        }
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create day-off");
+        let addedCount = 0;
+        let skippedCount = 0;
+
+        for (const dateStr of dates) {
+          try {
+            const response = await fetch("/api/day-offs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ date: dateStr, description: description || null }),
+            });
+
+            if (response.ok) {
+              addedCount++;
+            } else if (response.status === 409) {
+              skippedCount++;
+            } else {
+              const data = await response.json();
+              throw new Error(data.error || "Failed to create day-off");
+            }
+          } catch (err: any) {
+            if (!err.message.includes("already exists")) {
+              throw err;
+            }
+            skippedCount++;
+          }
+        }
+
+        setMessage(
+          `✓ Added ${addedCount} day-off(s)${
+            skippedCount > 0 ? `, skipped ${skippedCount} (already exists)` : ""
+          }`
+        );
+        setMessageType("success");
+      } else {
+        // Single date
+        const response = await fetch("/api/day-offs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, description: description || null }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to create day-off");
+        }
+
+        setMessage("✓ Day-off added successfully!");
+        setMessageType("success");
       }
 
-      setMessage("✓ Day-off added successfully!");
-      setMessageType("success");
       setDate("");
+      setEndDate("");
       setDescription("");
       setTimeout(() => {
         onSuccess();
@@ -1025,9 +1143,33 @@ function DayOffsModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Mode</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={!isRangeMode ? "default" : "outline"}
+                onClick={() => setIsRangeMode(false)}
+                className="flex-1"
+              >
+                Single Day
+              </Button>
+              <Button
+                type="button"
+                variant={isRangeMode ? "default" : "outline"}
+                onClick={() => setIsRangeMode(true)}
+                className="flex-1"
+              >
+                Date Range
+              </Button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="date">Date</Label>
+              <Label htmlFor="date">
+                {isRangeMode ? "Start Date" : "Date"}
+              </Label>
               <Input
                 id="date"
                 type="date"
@@ -1036,6 +1178,34 @@ function DayOffsModal({
                 required
               />
             </div>
+            {isRangeMode && (
+              <div className="space-y-2">
+                <Label htmlFor="endDate">End Date</Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  required
+                  min={date}
+                />
+              </div>
+            )}
+            {!isRangeMode && (
+              <div className="space-y-2">
+                <Label htmlFor="description">Description (optional)</Label>
+                <Input
+                  id="description"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g., Christmas, Vacation"
+                />
+              </div>
+            )}
+          </div>
+
+          {isRangeMode && (
             <div className="space-y-2">
               <Label htmlFor="description">Description (optional)</Label>
               <Input
@@ -1046,10 +1216,14 @@ function DayOffsModal({
                 placeholder="e.g., Christmas, Vacation"
               />
             </div>
-          </div>
+          )}
 
           <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? "Adding..." : "+ Add Day-Off"}
+            {submitting
+              ? "Adding..."
+              : isRangeMode
+              ? "+ Add Day-Off Range"
+              : "+ Add Day-Off"}
           </Button>
 
           {message && (

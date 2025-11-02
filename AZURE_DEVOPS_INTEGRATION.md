@@ -16,6 +16,12 @@ This document describes the Azure DevOps integration feature for importing tasks
 - Duplicate detection (prevents re-importing)
 - Visual badge for imported items
 
+### 3. Refresh/Update Imported Tasks
+- Click the **🔄 Refresh** button to update all previously imported tasks
+- Automatically syncs title, type, and status changes from Azure DevOps
+- Shows how many tasks were updated
+- Only updates tasks that have changed
+
 ## Setup Instructions
 
 ### Step 1: Create a Personal Access Token (PAT)
@@ -58,6 +64,7 @@ This document describes the Azure DevOps integration feature for importing tasks
 New columns added to the `tasks` table:
 - `external_id`: Stores the unique identifier from Azure DevOps (e.g., "ado-12345")
 - `external_source`: Identifies the source system (currently "azure_devops")
+- `status`: Stores the work item status from Azure DevOps (e.g., "New", "Active", "Resolved", "Closed")
 
 New `settings` table:
 - Stores configuration key-value pairs
@@ -80,11 +87,26 @@ New `settings` table:
   - `{ "workItemIds": [123, 456, 789] }` - Import specific work item IDs
   - `{ "query": "SELECT [System.Id] FROM WorkItems WHERE..." }` - Custom WIQL query
 
+#### `/api/azure-devops/refresh`
+- `POST`: Update all previously imported work items with latest data from Azure DevOps
+- Automatically finds all tasks with `external_source = "azure_devops"`
+- Updates title, type, and status for tasks that have changed
+- Returns count of updated and skipped tasks
+
 ### Work Item Type Mapping
 
 Azure DevOps work item types are mapped to the app's task types:
 - **Bug** → `bug`
 - All others (Task, User Story, Feature, etc.) → `task`
+
+### Status Import
+
+The work item status is automatically imported from Azure DevOps and stored in the `status` field. Common status values include:
+- **New**: Work item has been created but not yet started
+- **Active**: Work is in progress
+- **Resolved**: Work is complete and awaiting verification
+- **Closed**: Work item is finished and verified
+- Custom statuses defined in your Azure DevOps process template
 
 ### Duplicate Prevention
 

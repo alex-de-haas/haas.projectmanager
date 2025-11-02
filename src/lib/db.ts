@@ -14,6 +14,7 @@ const initDb = () => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'task',
+      status TEXT,
       external_id TEXT,
       external_source TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -52,6 +53,20 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_task_date ON time_entries(task_id, date);
     CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date);
   `);
+
+  // Migration: Add status column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const hasStatusColumn = tableInfo.some(col => col.name === 'status');
+    
+    if (!hasStatusColumn) {
+      console.log('Adding status column to tasks table...');
+      db.exec('ALTER TABLE tasks ADD COLUMN status TEXT');
+      console.log('Status column added successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
 };
 
 // Initialize on first import
