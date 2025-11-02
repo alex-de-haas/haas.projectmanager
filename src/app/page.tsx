@@ -484,10 +484,10 @@ export default function Home() {
               {tasks.map((task, taskIndex) => (
                 <tr
                   key={task.id}
-                  className="group border-b border-gray-200 hover:bg-gray-50"
+                  className="group border-b border-gray-200 hover:bg-gray-100"
                 >
                   <td
-                    className="py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10"
+                    className="py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-100 z-10"
                     style={{ minWidth: "400px", width: "400px" }}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -591,12 +591,12 @@ export default function Home() {
                         key={dateStr}
                         className={`py-2 px-3 text-center cursor-pointer transition-colors ${
                           isToday(day)
-                            ? "bg-orange-50 group-hover:bg-orange-100"
+                            ? "bg-orange-50 group-hover:bg-orange-200"
                             : isDayOffDay
-                            ? "bg-purple-50 group-hover:bg-purple-100"
+                            ? "bg-purple-50 group-hover:bg-purple-200"
                             : isWeekendDay
-                            ? "bg-gray-100 group-hover:bg-gray-200"
-                            : "bg-white group-hover:bg-gray-50"
+                            ? "bg-gray-100 group-hover:bg-gray-300"
+                            : "bg-white group-hover:bg-gray-100"
                         }`}
                         onClick={() =>
                           !isEditing && handleCellClick(task.id, dateStr, hours)
@@ -624,7 +624,7 @@ export default function Home() {
                     );
                   })}
                   <td
-                    className="py-2 px-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-50"
+                    className="py-2 px-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-100"
                     style={{ minWidth: "100px", width: "100px" }}
                   >
                     {formatTimeDisplay(totalHoursByTask[taskIndex])}
