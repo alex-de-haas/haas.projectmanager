@@ -33,10 +33,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { AddTaskModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
+import { Bug, ListTodo } from "lucide-react";
+import { ShieldAlert, Trash2, MoreVertical, TreePalm } from "lucide-react";
 
 const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
 
@@ -555,8 +568,9 @@ export default function Home() {
                       <div className={`text-xs ${subTextClass}`}>
                         {format(day.date, "dd MMM")}
                         {day.isDayOff && (
-                          <div className="text-[10px] font-medium">
-                            🏖️ Day Off
+                          <div className="text-[10px] font-medium flex items-center justify-center gap-1">
+                            <TreePalm className="w-3 h-3" />
+                            <span>Day Off</span>
                           </div>
                         )}
                       </div>
@@ -641,44 +655,27 @@ export default function Home() {
                     style={{ minWidth: "400px", width: "400px" }}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <div className="flex flex-col gap-1 flex-1 min-w-0">
                         <div className="font-medium text-sm text-gray-900 flex items-center gap-1.5 min-w-0">
                           <div
                             className="flex items-center justify-center flex-shrink-0"
                             title={task.type === "bug" ? "Bug" : "Task"}
                           >
                             {task.type === "bug" ? (
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M4.47 2.53a.75.75 0 0 1 1.06 0l.97.97a3.5 3.5 0 0 1 3 0l.97-.97a.75.75 0 1 1 1.06 1.06l-.47.47c.52.56.89 1.28 1.01 2.08H13a.75.75 0 0 1 0 1.5h-.94a3.51 3.51 0 0 1-1.01 2.08l.47.47a.75.75 0 1 1-1.06 1.06l-.97-.97a3.5 3.5 0 0 1-3 0l-.97.97a.75.75 0 0 1-1.06-1.06l.47-.47A3.51 3.51 0 0 1 3.92 7.64H3a.75.75 0 0 1 0-1.5h.92c.12-.8.49-1.52 1.01-2.08l-.46-.47a.75.75 0 0 1 0-1.06ZM6.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm3 1.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0Z"
-                                  fill="#dc2626"
-                                />
-                              </svg>
+                              <Bug className="w-4 h-4 text-red-600" />
                             ) : (
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M2.5 3.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 3h10v1H3V3Z"
-                                  fill="#3b82f6"
-                                />
-                                <path
-                                  d="M2.5 7.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 7h10v1H3V7ZM2.5 11.5a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1ZM3 11h10v1H3v-1Z"
-                                  fill="#3b82f6"
-                                />
-                              </svg>
+                              <ListTodo className="w-4 h-4 text-blue-500" />
                             )}
                           </div>
+                          {hasBlockers && (
+                            <Badge
+                              variant="outline"
+                              className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 flex items-center gap-1 flex-shrink-0"
+                            >
+                              <ShieldAlert className="w-3 h-3" />
+                              <span className="font-semibold">{activeBlockers.length}</span>
+                            </Badge>
+                          )}
                           {task.external_source === "azure_devops" &&
                             task.external_id && (
                               <Badge
@@ -691,6 +688,21 @@ export default function Home() {
                                 {parseInt(task.external_id)}
                               </Badge>
                             )}
+                          <Badge
+                            variant="outline"
+                            className={`h-5 px-2 text-xs flex-shrink-0 ${
+                              task.status?.toLowerCase() === "active"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : task.status?.toLowerCase() === "resolved" ||
+                                  task.status?.toLowerCase() === "closed"
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : task.status?.toLowerCase() === "new"
+                                ? "bg-gray-50 text-gray-700 border-gray-200"
+                                : "bg-gray-50 text-gray-700 border-gray-200"
+                            }`}
+                          >
+                            {task.status || "New"}
+                          </Badge>
                           <div className="truncate min-w-0" title={task.title}>
                             {task.external_source === "azure_devops" &&
                             task.external_id ? (
@@ -706,53 +718,97 @@ export default function Home() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Select
-                            value={task.status || ""}
-                            onValueChange={(value) => 
-                              handleStatusChange(
-                                task.id, 
-                                value, 
-                                task.external_source === "azure_devops"
-                              )
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
+                            title="Actions"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <span>Change Status</span>
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleStatusChange(
+                                    task.id,
+                                    "New",
+                                    task.external_source === "azure_devops"
+                                  )
+                                }
+                              >
+                                New
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleStatusChange(
+                                    task.id,
+                                    "Active",
+                                    task.external_source === "azure_devops"
+                                  )
+                                }
+                              >
+                                Active
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleStatusChange(
+                                    task.id,
+                                    "Resolved",
+                                    task.external_source === "azure_devops"
+                                  )
+                                }
+                              >
+                                Resolved
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleStatusChange(
+                                    task.id,
+                                    "Closed",
+                                    task.external_source === "azure_devops"
+                                  )
+                                }
+                              >
+                                Closed
+                              </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setShowBlockers({ taskId: task.id, taskTitle: task.title })
                             }
                           >
-                            <SelectTrigger className="w-[140px] h-7 text-xs">
-                              <SelectValue placeholder="Set status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="New">New</SelectItem>
-                              <SelectItem value="Active">Active</SelectItem>
-                              <SelectItem value="Resolved">Resolved</SelectItem>
-                              <SelectItem value="Closed">Closed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            onClick={() => setShowBlockers({ taskId: task.id, taskTitle: task.title })}
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs flex items-center gap-1"
+                            <span className="flex items-center gap-2">
+                              <ShieldAlert className="h-4 w-4" />
+                              <span>Manage Blockers</span>
+                              {hasBlockers && (
+                                <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
+                                  {activeBlockers.length}
+                                </Badge>
+                              )}
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteTask(task.id, task.title)}
+                            className="text-red-600 focus:text-red-600 focus:bg-red-50"
                           >
-                            {hasBlockers ? (
-                              <>
-                                <span className="text-red-600">🚫</span>
-                                <span className="font-semibold">{activeBlockers.length}</span>
-                              </>
-                            ) : (
-                              "Blockers"
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
-                        onClick={() => handleDeleteTask(task.id, task.title)}
-                        title="Delete task"
-                      >
-                        ✕
-                      </Button>
+                            <span className="flex items-center gap-2">
+                              <Trash2 className="h-4 w-4" />
+                              <span>Delete Task</span>
+                            </span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </td>
                   {calendarDays.map((day) => {
