@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const endDate = `${year}-${monthNum}-31`;
 
     // Fetch all tasks
-    const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all() as Task[];
+    const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all() as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
