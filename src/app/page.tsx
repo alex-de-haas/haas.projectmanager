@@ -570,13 +570,36 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task, taskIndex) => (
+              {tasks.map((task, taskIndex) => {
+                // Determine row background color based on status
+                const getRowClass = () => {
+                  const status = task.status?.toLowerCase();
+                  if (status === 'active') {
+                    return "group border-b border-gray-200 bg-blue-50 hover:bg-blue-100";
+                  } else if (status === 'resolved' || status === 'closed') {
+                    return "group border-b border-gray-200 bg-green-50 hover:bg-green-100";
+                  }
+                  return "group border-b border-gray-200 hover:bg-gray-100";
+                };
+
+                // Get sticky column background color based on status
+                const getStickyBgClass = () => {
+                  const status = task.status?.toLowerCase();
+                  if (status === 'active') {
+                    return "py-2 px-3 sticky left-0 bg-blue-50 group-hover:bg-blue-100 z-10";
+                  } else if (status === 'resolved' || status === 'closed') {
+                    return "py-2 px-3 sticky left-0 bg-green-50 group-hover:bg-green-100 z-10";
+                  }
+                  return "py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-100 z-10";
+                };
+
+                return (
                 <tr
                   key={task.id}
-                  className="group border-b border-gray-200 hover:bg-gray-100"
+                  className={getRowClass()}
                 >
                   <td
-                    className="py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-100 z-10"
+                    className={getStickyBgClass()}
                     style={{ minWidth: "400px", width: "400px" }}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -685,13 +708,27 @@ export default function Home() {
                       editingCell?.taskId === task.id &&
                       editingCell?.date === day.key;
 
+                    // Get base color based on task status
+                    const status = task.status?.toLowerCase();
+                    const getBaseCellColor = () => {
+                      if (status === 'active') {
+                        return { bg: 'bg-blue-50', hover: 'group-hover:bg-blue-100' };
+                      } else if (status === 'resolved' || status === 'closed') {
+                        return { bg: 'bg-green-50', hover: 'group-hover:bg-green-100' };
+                      }
+                      return { bg: 'bg-white', hover: 'group-hover:bg-gray-100' };
+                    };
+
+                    const baseColor = getBaseCellColor();
+
+                    // Special day types override the status color
                     const cellClass = day.isToday
                       ? "bg-orange-50 group-hover:bg-orange-200"
                       : day.isDayOff
                       ? "bg-purple-50 group-hover:bg-purple-200"
                       : day.isWeekend
                       ? "bg-gray-100 group-hover:bg-gray-300"
-                      : "bg-white group-hover:bg-gray-100";
+                      : `${baseColor.bg} ${baseColor.hover}`;
 
                     return (
                       <td
@@ -723,13 +760,18 @@ export default function Home() {
                     );
                   })}
                   <td
-                    className="py-2 px-3 text-center font-semibold text-sm text-gray-900 group-hover:bg-gray-100"
+                    className={`py-2 px-3 text-center font-semibold text-sm text-gray-900 ${
+                      task.status?.toLowerCase() === 'active' ? 'group-hover:bg-blue-100' :
+                      task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'group-hover:bg-green-100' :
+                      'group-hover:bg-gray-100'
+                    }`}
                     style={{ minWidth: "100px", width: "100px" }}
                   >
                     {formatTimeDisplay(totalHoursByTask[taskIndex])}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               <tr className="bg-gray-50 border-t-2 border-gray-300 sticky bottom-0 z-10">
                 <td className="p-3 sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
                   {/* Empty cell */}
