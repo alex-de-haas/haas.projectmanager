@@ -676,10 +676,10 @@ export default function Home() {
                   );
                 })}
                 <th
-                  className="p-3 text-center font-normal text-gray-600 text-sm bg-gray-50"
+                  className="p-3 text-center font-normal text-gray-600 text-sm bg-gray-50 sticky right-0 z-10"
                   style={{ minWidth: "100px", width: "100px" }}
                 >
-                  {/* Empty for totals */}
+                  Total
                 </th>
               </tr>
             </thead>
@@ -1013,15 +1013,15 @@ export default function Home() {
                     );
                   })}
                   <td
-                    className={`py-2 px-3 text-center font-semibold text-sm text-gray-900 ${
+                    className={`py-2 px-3 text-center font-semibold text-sm text-gray-900 sticky right-0 z-10 ${
                       hasBlockers 
-                        ? highestSeverity === 'critical' ? 'group-hover:bg-red-200' :
-                          highestSeverity === 'high' ? 'group-hover:bg-orange-200' :
-                          highestSeverity === 'medium' ? 'group-hover:bg-yellow-200' :
-                          'group-hover:bg-blue-200'
-                        : task.status?.toLowerCase() === 'active' ? 'group-hover:bg-blue-100' :
-                          task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'group-hover:bg-green-100' :
-                          'group-hover:bg-gray-100'
+                        ? highestSeverity === 'critical' ? 'bg-red-100 group-hover:bg-red-200' :
+                          highestSeverity === 'high' ? 'bg-orange-100 group-hover:bg-orange-200' :
+                          highestSeverity === 'medium' ? 'bg-yellow-100 group-hover:bg-yellow-200' :
+                          'bg-blue-100 group-hover:bg-blue-200'
+                        : task.status?.toLowerCase() === 'active' ? 'bg-blue-50 group-hover:bg-blue-100' :
+                          task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'bg-green-50 group-hover:bg-green-100' :
+                          'bg-white group-hover:bg-gray-100'
                     }`}
                     style={{ minWidth: "100px", width: "100px" }}
                   >
@@ -1062,7 +1062,7 @@ export default function Home() {
                   );
                 })}
                 <td
-                  className="p-3 text-center font-bold text-sm text-gray-900"
+                  className="p-3 text-center font-bold text-sm text-gray-900 bg-gray-50 sticky right-0 z-10"
                   style={{ minWidth: "100px", width: "100px" }}
                 >
                   {formatTimeDisplay(grandTotal)}
