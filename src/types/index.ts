@@ -20,6 +20,7 @@ export interface TimeEntry {
 
 export interface TaskWithTimeEntries extends Task {
   timeEntries: Record<string, number>; // date -> hours
+  blockers?: Blocker[];
 }
 
 export interface Settings {
@@ -48,4 +49,20 @@ export interface DayOff {
   date: string; // YYYY-MM-DD format
   description?: string | null;
   created_at: Date;
+}
+
+export type BlockerSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface Blocker {
+  id: number;
+  task_id: number;
+  comment: string;
+  severity: BlockerSeverity;
+  is_resolved: number; // SQLite uses 0/1 for boolean
+  created_at: Date;
+  resolved_at?: Date | null;
+}
+
+export interface TaskWithBlockers extends Task {
+  blockers: Blocker[];
 }

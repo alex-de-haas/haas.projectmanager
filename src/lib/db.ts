@@ -46,12 +46,26 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS blockers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      comment TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'medium',
+      is_resolved INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      resolved_at DATETIME,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      CHECK(severity IN ('low', 'medium', 'high', 'critical'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_type ON tasks(type);
     CREATE INDEX IF NOT EXISTS idx_created_at ON tasks(created_at);
     CREATE INDEX IF NOT EXISTS idx_external_id ON tasks(external_id);
     CREATE INDEX IF NOT EXISTS idx_date ON time_entries(date);
     CREATE INDEX IF NOT EXISTS idx_task_date ON time_entries(task_id, date);
     CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date);
+    CREATE INDEX IF NOT EXISTS idx_blocker_task_id ON blockers(task_id);
+    CREATE INDEX IF NOT EXISTS idx_blocker_resolved ON blockers(is_resolved);
   `);
 
   // Migration: Add status column if it doesn't exist

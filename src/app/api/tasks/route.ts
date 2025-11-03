@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import type { Task, TimeEntry, TaskWithTimeEntries } from '@/types';
+import type { Task, TimeEntry, TaskWithTimeEntries, Blocker } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,7 +23,12 @@ export async function GET(request: NextRequest) {
       'SELECT * FROM time_entries WHERE date >= ? AND date <= ?'
     ).all(startDate, endDate) as TimeEntry[];
 
-    // Combine tasks with their time entries
+    // Fetch all active blockers
+    const blockers = db.prepare(
+      'SELECT * FROM blockers WHERE is_resolved = 0 ORDER BY task_id, created_at DESC'
+    ).all() as Blocker[];
+
+    // Combine tasks with their time entries and blockers
     const tasksWithEntries: TaskWithTimeEntries[] = tasks.map(task => {
       const entries: Record<string, number> = {};
       
@@ -33,9 +38,12 @@ export async function GET(request: NextRequest) {
           entries[entry.date] = entry.hours;
         });
 
+      const taskBlockers = blockers.filter(b => b.task_id === task.id);
+
       return {
         ...task,
         timeEntries: entries,
+        blockers: taskBlockers,
       };
     });
 

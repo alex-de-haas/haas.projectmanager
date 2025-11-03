@@ -36,6 +36,7 @@ import {
 import { AddTaskModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
+import { BlockersModal } from "@/features/blockers";
 
 const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
 
@@ -53,6 +54,7 @@ export default function Home() {
   const [showImport, setShowImport] = useState(false);
   const [showDayOffs, setShowDayOffs] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showBlockers, setShowBlockers] = useState<{ taskId: number; taskTitle: string } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
     date: string;
@@ -571,8 +573,32 @@ export default function Home() {
             </thead>
             <tbody>
               {tasks.map((task, taskIndex) => {
-                // Determine row background color based on status
+                // Check for blockers and get highest severity
+                const activeBlockers = task.blockers?.filter(b => !b.is_resolved) || [];
+                const hasBlockers = activeBlockers.length > 0;
+                const highestSeverity = hasBlockers 
+                  ? activeBlockers.reduce((max, b) => {
+                      const severityOrder = { low: 1, medium: 2, high: 3, critical: 4 };
+                      const maxOrder = severityOrder[max as keyof typeof severityOrder] || 0;
+                      const bOrder = severityOrder[b.severity as keyof typeof severityOrder] || 0;
+                      return bOrder > maxOrder ? b.severity : max;
+                    }, 'low')
+                  : null;
+
+                // Determine row background color based on blockers and status
                 const getRowClass = () => {
+                  if (hasBlockers) {
+                    switch (highestSeverity) {
+                      case 'critical':
+                        return "group border-b border-gray-200 bg-red-100 hover:bg-red-200";
+                      case 'high':
+                        return "group border-b border-gray-200 bg-orange-100 hover:bg-orange-200";
+                      case 'medium':
+                        return "group border-b border-gray-200 bg-yellow-100 hover:bg-yellow-200";
+                      case 'low':
+                        return "group border-b border-gray-200 bg-blue-100 hover:bg-blue-200";
+                    }
+                  }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
                     return "group border-b border-gray-200 bg-blue-50 hover:bg-blue-100";
@@ -582,8 +608,20 @@ export default function Home() {
                   return "group border-b border-gray-200 hover:bg-gray-100";
                 };
 
-                // Get sticky column background color based on status
+                // Get sticky column background color based on blockers and status
                 const getStickyBgClass = () => {
+                  if (hasBlockers) {
+                    switch (highestSeverity) {
+                      case 'critical':
+                        return "py-2 px-3 sticky left-0 bg-red-100 group-hover:bg-red-200 z-10";
+                      case 'high':
+                        return "py-2 px-3 sticky left-0 bg-orange-100 group-hover:bg-orange-200 z-10";
+                      case 'medium':
+                        return "py-2 px-3 sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 z-10";
+                      case 'low':
+                        return "py-2 px-3 sticky left-0 bg-blue-100 group-hover:bg-blue-200 z-10";
+                    }
+                  }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
                     return "py-2 px-3 sticky left-0 bg-blue-50 group-hover:bg-blue-100 z-10";
@@ -689,6 +727,21 @@ export default function Home() {
                               <SelectItem value="Closed">Closed</SelectItem>
                             </SelectContent>
                           </Select>
+                          <Button
+                            onClick={() => setShowBlockers({ taskId: task.id, taskTitle: task.title })}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs flex items-center gap-1"
+                          >
+                            {hasBlockers ? (
+                              <>
+                                <span className="text-red-600">🚫</span>
+                                <span className="font-semibold">{activeBlockers.length}</span>
+                              </>
+                            ) : (
+                              "Blockers"
+                            )}
+                          </Button>
                         </div>
                       </div>
                       <Button
@@ -708,9 +761,21 @@ export default function Home() {
                       editingCell?.taskId === task.id &&
                       editingCell?.date === day.key;
 
-                    // Get base color based on task status
-                    const status = task.status?.toLowerCase();
+                    // Get base color based on blockers first, then task status
                     const getBaseCellColor = () => {
+                      if (hasBlockers) {
+                        switch (highestSeverity) {
+                          case 'critical':
+                            return { bg: 'bg-red-100', hover: 'group-hover:bg-red-200' };
+                          case 'high':
+                            return { bg: 'bg-orange-100', hover: 'group-hover:bg-orange-200' };
+                          case 'medium':
+                            return { bg: 'bg-yellow-100', hover: 'group-hover:bg-yellow-200' };
+                          case 'low':
+                            return { bg: 'bg-blue-100', hover: 'group-hover:bg-blue-200' };
+                        }
+                      }
+                      const status = task.status?.toLowerCase();
                       if (status === 'active') {
                         return { bg: 'bg-blue-50', hover: 'group-hover:bg-blue-100' };
                       } else if (status === 'resolved' || status === 'closed') {
@@ -721,7 +786,7 @@ export default function Home() {
 
                     const baseColor = getBaseCellColor();
 
-                    // Special day types override the status color
+                    // Special day types override the base color
                     const cellClass = day.isToday
                       ? "bg-orange-50 group-hover:bg-orange-200"
                       : day.isDayOff
@@ -761,9 +826,14 @@ export default function Home() {
                   })}
                   <td
                     className={`py-2 px-3 text-center font-semibold text-sm text-gray-900 ${
-                      task.status?.toLowerCase() === 'active' ? 'group-hover:bg-blue-100' :
-                      task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'group-hover:bg-green-100' :
-                      'group-hover:bg-gray-100'
+                      hasBlockers 
+                        ? highestSeverity === 'critical' ? 'group-hover:bg-red-200' :
+                          highestSeverity === 'high' ? 'group-hover:bg-orange-200' :
+                          highestSeverity === 'medium' ? 'group-hover:bg-yellow-200' :
+                          'group-hover:bg-blue-200'
+                        : task.status?.toLowerCase() === 'active' ? 'group-hover:bg-blue-100' :
+                          task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'group-hover:bg-green-100' :
+                          'group-hover:bg-gray-100'
                     }`}
                     style={{ minWidth: "100px", width: "100px" }}
                   >
@@ -838,6 +908,17 @@ export default function Home() {
             fetchDayOffs();
           }}
           currentDayOffs={dayOffs}
+        />
+      )}
+
+      {showBlockers && (
+        <BlockersModal
+          taskId={showBlockers.taskId}
+          taskTitle={showBlockers.taskTitle}
+          onClose={() => setShowBlockers(null)}
+          onSuccess={() => {
+            fetchTasks();
+          }}
         />
       )}
     </div>
