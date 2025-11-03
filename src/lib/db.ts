@@ -81,6 +81,28 @@ const initDb = () => {
   } catch (error) {
     console.error('Migration error:', error);
   }
+
+  // Migration: Add display_order column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const hasDisplayOrderColumn = tableInfo.some(col => col.name === 'display_order');
+    
+    if (!hasDisplayOrderColumn) {
+      console.log('Adding display_order column to tasks table...');
+      db.exec('ALTER TABLE tasks ADD COLUMN display_order INTEGER');
+      
+      // Set display_order for existing tasks based on their current order
+      const existingTasks = db.prepare('SELECT id FROM tasks ORDER BY created_at ASC').all() as Array<{ id: number }>;
+      const updateStmt = db.prepare('UPDATE tasks SET display_order = ? WHERE id = ?');
+      existingTasks.forEach((task, index) => {
+        updateStmt.run(index, task.id);
+      });
+      
+      console.log('Display order column added and initialized successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
 };
 
 // Initialize on first import

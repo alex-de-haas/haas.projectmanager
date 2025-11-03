@@ -15,8 +15,8 @@ export async function GET(request: NextRequest) {
     const startDate = `${year}-${monthNum}-01`;
     const endDate = `${year}-${monthNum}-31`;
 
-    // Fetch all tasks
-    const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all() as Task[];
+    // Fetch all tasks ordered by display_order, with fallback to created_at
+    const tasks = db.prepare('SELECT * FROM tasks ORDER BY COALESCE(display_order, 999999), created_at ASC').all() as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
@@ -76,9 +76,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get the current max display_order and add 1 for the new task
+    const maxOrder = db.prepare('SELECT MAX(display_order) as max_order FROM tasks').get() as { max_order: number | null };
+    const newOrder = (maxOrder.max_order ?? -1) + 1;
+
     const result = db.prepare(
-      'INSERT INTO tasks (title, type) VALUES (?, ?)'
-    ).run(title, type);
+      'INSERT INTO tasks (title, type, display_order) VALUES (?, ?, ?)'
+    ).run(title, type, newOrder);
 
     return NextResponse.json(
       { message: 'Task created successfully', id: result.lastInsertRowid },

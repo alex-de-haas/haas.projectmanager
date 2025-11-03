@@ -48,10 +48,67 @@ import { AddTaskModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
-import { Bug, ListTodo } from "lucide-react";
+import { Bug, ListTodo, GripVertical } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
+
+interface SortableRowProps {
+  id: number;
+  children: React.ReactNode;
+  rowClassName: string;
+  dragHandleBgClassName: string;
+}
+
+function SortableRow({ id, children, rowClassName, dragHandleBgClassName }: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} className={rowClassName}>
+      <td className={`py-2 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4 text-gray-400" />
+        </div>
+      </td>
+      {children}
+    </tr>
+  );
+}
 
 export default function Home() {
   const [tasks, setTasks] = useState<TaskWithTimeEntries[]>([]);
@@ -132,6 +189,44 @@ export default function Home() {
       console.error("Failed to load day-offs:", err);
     }
   }, [dayOffRange]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      setTasks((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+
+        const newItems = arrayMove(items, oldIndex, newIndex);
+
+        // Update display_order in database
+        const taskOrders = newItems.map((item, index) => ({
+          id: item.id,
+          order: index,
+        }));
+
+        fetch("/api/tasks/reorder", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskOrders }),
+        }).catch((err) => {
+          console.error("Failed to update task order:", err);
+          // Revert on error by fetching fresh data
+          fetchTasks();
+        });
+
+        return newItems;
+      });
+    }
+  }, [fetchTasks]);
 
   useEffect(() => {
     fetchTasks(true);
@@ -525,7 +620,10 @@ export default function Home() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
-                <th className="p-3 text-left font-normal text-gray-600 text-sm sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
+                <th className="p-3 sticky left-0 bg-gray-50 z-10" style={{ width: "40px" }}>
+                  {/* Drag handle column */}
+                </th>
+                <th className="p-3 text-left font-normal text-gray-600 text-sm sticky left-[40px] bg-gray-50 z-10 overflow-hidden w-[400px]">
                   {/* Empty for task names */}
                 </th>
                 {calendarDays.map((day) => {
@@ -585,8 +683,17 @@ export default function Home() {
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {tasks.map((task, taskIndex) => {
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={tasks.map((t) => t.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody>
+                  {tasks.map((task, taskIndex) => {
                 // Check for blockers and get highest severity
                 const activeBlockers = task.blockers?.filter(b => !b.is_resolved) || [];
                 const hasBlockers = activeBlockers.length > 0;
@@ -627,33 +734,58 @@ export default function Home() {
                   if (hasBlockers) {
                     switch (highestSeverity) {
                       case 'critical':
-                        return "py-2 px-3 sticky left-0 bg-red-100 group-hover:bg-red-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 z-10";
                       case 'high':
-                        return "py-2 px-3 sticky left-0 bg-orange-100 group-hover:bg-orange-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 z-10";
                       case 'medium':
-                        return "py-2 px-3 sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 z-10";
                       case 'low':
-                        return "py-2 px-3 sticky left-0 bg-blue-100 group-hover:bg-blue-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 z-10";
                     }
                   }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
-                    return "py-2 px-3 sticky left-0 bg-blue-50 group-hover:bg-blue-100 z-10";
+                    return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 z-10";
                   } else if (status === 'resolved' || status === 'closed') {
-                    return "py-2 px-3 sticky left-0 bg-green-50 group-hover:bg-green-100 z-10";
+                    return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 z-10";
                   }
-                  return "py-2 px-3 sticky left-0 bg-white group-hover:bg-gray-100 z-10";
+                  return "py-2 px-3 sticky left-[40px] bg-white group-hover:bg-gray-100 z-10";
+                };
+
+                // Get drag handle background color
+                const getDragHandleBgClass = () => {
+                  if (hasBlockers) {
+                    switch (highestSeverity) {
+                      case 'critical':
+                        return "sticky left-0 bg-red-100 group-hover:bg-red-200 z-10";
+                      case 'high':
+                        return "sticky left-0 bg-orange-100 group-hover:bg-orange-200 z-10";
+                      case 'medium':
+                        return "sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 z-10";
+                      case 'low':
+                        return "sticky left-0 bg-blue-100 group-hover:bg-blue-200 z-10";
+                    }
+                  }
+                  const status = task.status?.toLowerCase();
+                  if (status === 'active') {
+                    return "sticky left-0 bg-blue-50 group-hover:bg-blue-100 z-10";
+                  } else if (status === 'resolved' || status === 'closed') {
+                    return "sticky left-0 bg-green-50 group-hover:bg-green-100 z-10";
+                  }
+                  return "sticky left-0 bg-white group-hover:bg-gray-100 z-10";
                 };
 
                 return (
-                <tr
-                  key={task.id}
-                  className={getRowClass()}
-                >
-                  <td
-                    className={getStickyBgClass()}
-                    style={{ minWidth: "400px", width: "400px" }}
+                  <SortableRow
+                    key={task.id}
+                    id={task.id}
+                    rowClassName={getRowClass()}
+                    dragHandleBgClassName={getDragHandleBgClass()}
                   >
+                    <td
+                      className={getStickyBgClass()}
+                      style={{ minWidth: "400px", width: "400px" }}
+                    >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
                         <div className="font-medium text-sm text-gray-900 flex items-center gap-1.5 min-w-0">
@@ -895,11 +1027,18 @@ export default function Home() {
                   >
                     {formatTimeDisplay(totalHoursByTask[taskIndex])}
                   </td>
-                </tr>
+                  </SortableRow>
                 );
-              })}
+                  })}
+                </tbody>
+              </SortableContext>
+            </DndContext>
+            <tfoot>
               <tr className="bg-gray-50 border-t-2 border-gray-300 sticky bottom-0 z-10">
-                <td className="p-3 sticky left-0 bg-gray-50 z-10 overflow-hidden w-[200px]">
+                <td className="p-3 sticky left-0 bg-gray-50 z-10" style={{ width: "40px" }}>
+                  {/* Empty drag handle cell */}
+                </td>
+                <td className="p-3 sticky left-[40px] bg-gray-50 z-10 overflow-hidden w-[400px]">
                   {/* Empty cell */}
                 </td>
                 {calendarDays.map((day, index) => {
@@ -929,7 +1068,7 @@ export default function Home() {
                   {formatTimeDisplay(grandTotal)}
                 </td>
               </tr>
-            </tbody>
+            </tfoot>
           </table>
         </div>
       </div>

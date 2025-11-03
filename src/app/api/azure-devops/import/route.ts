@@ -119,13 +119,17 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Get the current max display_order and add 1 for the new task
+      const maxOrder = db.prepare('SELECT MAX(display_order) as max_order FROM tasks').get() as { max_order: number | null };
+      const newOrder = (maxOrder.max_order ?? -1) + 1;
+
       // Insert task
       const stmt = db.prepare(`
-        INSERT INTO tasks (title, type, status, external_id, external_source)
-        VALUES (?, ?, ?, ?, 'azure_devops')
+        INSERT INTO tasks (title, type, status, external_id, external_source, display_order)
+        VALUES (?, ?, ?, ?, 'azure_devops', ?)
       `);
 
-      const result = stmt.run(title, taskType, status, workItem.id);
+      const result = stmt.run(title, taskType, status, workItem.id, newOrder);
       
       const newTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
       imported.push(newTask);
