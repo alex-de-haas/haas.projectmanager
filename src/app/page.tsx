@@ -38,6 +38,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
@@ -50,7 +51,7 @@ import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { Bug, ListTodo, GripVertical } from "lucide-react";
-import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil } from "lucide-react";
+import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -555,7 +556,7 @@ export default function Home() {
   return (
     <div className="py-6 mx-auto">
       <div className="p-6">
-        <div className="flex gap-3 items-center justify-between flex-wrap mb-4">
+        <div className="flex gap-3 items-center justify-between flex-wrap">
           <div className="flex gap-3 items-center">
             <Button
               onClick={() => changeDate(-1)}
@@ -582,68 +583,75 @@ export default function Home() {
               →
             </Button>
           </div>
-          <div className="flex bg-gray-100 rounded-md p-1">
-            <Button
-              variant={viewMode === "week" ? "default" : "ghost"}
-              size="sm"
-              className={`h-8 px-4 ${
-                viewMode === "week"
-                  ? "bg-orange-500 text-white hover:bg-orange-600"
-                  : ""
-              }`}
-              onClick={() => setViewMode("week")}
-            >
-              Week
-            </Button>
-            <Button
-              variant={viewMode === "month" ? "default" : "ghost"}
-              size="sm"
-              className="h-8 px-4"
-              onClick={() => setViewMode("month")}
-            >
-              Month
-            </Button>
-          </div>
-        </div>
-        <div className="flex gap-3 items-center flex-wrap">
-          <Button onClick={() => setShowAddTask(true)} variant="outline">
-            + Add row
-          </Button>
-          <Button onClick={() => setShowDayOffs(true)} variant="outline">
-            + Day Offs
-          </Button>
-          <Button onClick={() => setShowImport(true)} variant="outline">
-            Import from Azure DevOps
-          </Button>
-          <Button 
-            onClick={handleRefresh} 
-            variant="outline"
-            disabled={isRefreshing}
-          >
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          <Button onClick={() => setShowSettings(true)} variant="outline">
-            Settings
-          </Button>
-        </div>
 
-        <div className="flex gap-4 items-center flex-wrap mt-4 px-6">
-          <span className="text-sm font-medium text-gray-700">Show Status:</span>
-          {["New", "Active", "Resolved", "Closed"].map((status) => (
-            <div key={status} className="flex items-center gap-2">
-              <Checkbox
-                id={`status-${status}`}
-                checked={visibleStatuses.has(status)}
-                onCheckedChange={() => toggleStatusVisibility(status)}
-              />
-              <label
-                htmlFor={`status-${status}`}
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+          <div className="flex items-center gap-3 flex-wrap">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-10">
+                  <Filter className="w-4 h-4 mr-2" />
+                  Filter Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Show Status</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {["New", "Active", "Resolved", "Closed"].map((status) => (
+                  <DropdownMenuCheckboxItem
+                    key={status}
+                    checked={visibleStatuses.has(status)}
+                    onCheckedChange={() => toggleStatusVisibility(status)}
+                  >
+                    {status}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button onClick={() => setShowAddTask(true)} variant="outline" size="sm" className="h-10">
+              + Add row
+            </Button>
+            <Button onClick={() => setShowDayOffs(true)} variant="outline" size="sm" className="h-10">
+              + Day Offs
+            </Button>
+            <Button onClick={() => setShowImport(true)} variant="outline" size="sm" className="h-10">
+              Import from Azure DevOps
+            </Button>
+            <Button 
+              onClick={handleRefresh} 
+              variant="outline"
+              size="sm"
+              className="h-10"
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+            <Button onClick={() => setShowSettings(true)} variant="outline" size="sm" className="h-10">
+              Settings
+            </Button>
+
+            <div className="flex bg-gray-100 rounded-md p-1">
+              <Button
+                variant={viewMode === "week" ? "default" : "ghost"}
+                size="sm"
+                className={`h-8 px-4 ${
+                  viewMode === "week"
+                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                    : ""
+                }`}
+                onClick={() => setViewMode("week")}
               >
-                {status}
-              </label>
+                Week
+              </Button>
+              <Button
+                variant={viewMode === "month" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 px-4"
+                onClick={() => setViewMode("month")}
+              >
+                Month
+              </Button>
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
