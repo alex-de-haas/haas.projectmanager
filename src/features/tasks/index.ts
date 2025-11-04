@@ -1,1 +1,1 @@
-export { WorkItemModal, TaskModal, AddTaskModal } from "./components/WorkItemModal";
+export { WorkItemModal } from "./components/WorkItemModal";
