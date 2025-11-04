@@ -368,6 +368,32 @@ export default function Home() {
     [totalHoursByTask]
   );
 
+  // Calculate totals including hidden tasks
+  const allTotalHoursByDay = useMemo(
+    () =>
+      calendarDays.map((day) =>
+        tasks.reduce(
+          (sum, task) => sum + (task.timeEntries[day.key] || 0),
+          0
+        )
+      ),
+    [calendarDays, tasks]
+  );
+
+  const allGrandTotal = useMemo(
+    () =>
+      tasks.reduce(
+        (sum, task) =>
+          sum +
+          Object.values(task.timeEntries).reduce(
+            (taskSum, hours) => taskSum + hours,
+            0
+          ),
+        0
+      ),
+    [tasks]
+  );
+
   const toggleStatusVisibility = (status: string) => {
     setVisibleStatuses(prev => {
       const newSet = new Set(prev);
@@ -1168,6 +1194,9 @@ export default function Home() {
                 </td>
                 {calendarDays.map((day, index) => {
                   const total = totalHoursByDay[index];
+                  const allTotal = allTotalHoursByDay[index];
+                  const hasHidden = allTotal !== total;
+                  
                   const cellClass = day.isToday
                     ? "bg-orange-100 text-orange-900"
                     : day.isDayOff
@@ -1182,7 +1211,14 @@ export default function Home() {
                       className={`p-3 text-center font-semibold text-sm ${cellClass}`}
                       style={{ minWidth: "100px", width: "100px" }}
                     >
-                      {total > 0 ? formatTimeDisplay(total) : "0"}
+                      <div className="flex flex-col items-center">
+                        <span>{allTotal > 0 ? formatTimeDisplay(allTotal) : "0"}</span>
+                        {hasHidden && (
+                          <span className="text-xs text-gray-500 font-normal">
+                            ({formatTimeDisplay(total)} visible)
+                          </span>
+                        )}
+                      </div>
                     </td>
                   );
                 })}
@@ -1190,7 +1226,14 @@ export default function Home() {
                   className="p-3 text-center font-bold text-sm text-gray-900 bg-gray-50 sticky right-0 z-10"
                   style={{ minWidth: "100px", width: "100px" }}
                 >
-                  {formatTimeDisplay(grandTotal)}
+                  <div className="flex flex-col items-center">
+                    <span>{formatTimeDisplay(allGrandTotal)}</span>
+                    {allGrandTotal !== grandTotal && (
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({formatTimeDisplay(grandTotal)} visible)
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             </tfoot>
