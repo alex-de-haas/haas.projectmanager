@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -131,6 +132,9 @@ export default function Home() {
     date: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [visibleStatuses, setVisibleStatuses] = useState<Set<string>>(
+    new Set(["New", "Active", "Resolved", "Closed"])
+  );
   const monthParam = useMemo(
     () => format(currentDate, "yyyy-MM"),
     [currentDate]
@@ -271,32 +275,52 @@ export default function Home() {
     [currentDate, viewMode, dayOffMap]
   );
 
+  const filteredTasks = useMemo(
+    () => tasks.filter(task => {
+      const status = task.status || "New";
+      return visibleStatuses.has(status);
+    }),
+    [tasks, visibleStatuses]
+  );
+
   const totalHoursByDay = useMemo(
     () =>
       calendarDays.map((day) =>
-        tasks.reduce(
+        filteredTasks.reduce(
           (sum, task) => sum + (task.timeEntries[day.key] || 0),
           0
         )
       ),
-    [calendarDays, tasks]
+    [calendarDays, filteredTasks]
   );
 
   const totalHoursByTask = useMemo(
     () =>
-      tasks.map((task) =>
+      filteredTasks.map((task) =>
         Object.values(task.timeEntries).reduce(
           (sum, hours) => sum + hours,
           0
         )
       ),
-    [tasks]
+    [filteredTasks]
   );
 
   const grandTotal = useMemo(
     () => totalHoursByTask.reduce((sum, hours) => sum + hours, 0),
     [totalHoursByTask]
   );
+
+  const toggleStatusVisibility = (status: string) => {
+    setVisibleStatuses(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(status)) {
+        newSet.delete(status);
+      } else {
+        newSet.add(status);
+      }
+      return newSet;
+    });
+  };
 
   const handleCellClick = useCallback(
     (taskId: number, date: string, currentHours: number) => {
@@ -602,6 +626,25 @@ export default function Home() {
             Settings
           </Button>
         </div>
+
+        <div className="flex gap-4 items-center flex-wrap mt-4 px-6">
+          <span className="text-sm font-medium text-gray-700">Show Status:</span>
+          {["New", "Active", "Resolved", "Closed"].map((status) => (
+            <div key={status} className="flex items-center gap-2">
+              <Checkbox
+                id={`status-${status}`}
+                checked={visibleStatuses.has(status)}
+                onCheckedChange={() => toggleStatusVisibility(status)}
+              />
+              <label
+                htmlFor={`status-${status}`}
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                {status}
+              </label>
+            </div>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -690,11 +733,11 @@ export default function Home() {
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={tasks.map((t) => t.id)}
+                items={filteredTasks.map((t) => t.id)}
                 strategy={verticalListSortingStrategy}
               >
                 <tbody>
-                  {tasks.map((task, taskIndex) => {
+                  {filteredTasks.map((task, taskIndex) => {
                 // Check for blockers and get highest severity
                 const activeBlockers = task.blockers?.filter(b => !b.is_resolved) || [];
                 const hasBlockers = activeBlockers.length > 0;
