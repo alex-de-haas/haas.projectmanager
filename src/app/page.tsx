@@ -119,8 +119,32 @@ export default function Home() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  
+  // Initialize state from localStorage
+  const [currentDate, setCurrentDate] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('projectManager.currentDate');
+      if (stored) {
+        try {
+          return new Date(stored);
+        } catch {
+          return new Date();
+        }
+      }
+    }
+    return new Date();
+  });
+  
+  const [viewMode, setViewMode] = useState<"week" | "month">(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('projectManager.viewMode');
+      if (stored === 'week' || stored === 'month') {
+        return stored;
+      }
+    }
+    return 'week';
+  });
+  
   const [showAddTask, setShowAddTask] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -133,9 +157,21 @@ export default function Home() {
     date: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [visibleStatuses, setVisibleStatuses] = useState<Set<string>>(
-    new Set(["New", "Active", "Resolved", "Closed"])
-  );
+  
+  const [visibleStatuses, setVisibleStatuses] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('projectManager.visibleStatuses');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          return new Set(Array.isArray(parsed) ? parsed : ["New", "Active", "Resolved", "Closed"]);
+        } catch {
+          return new Set(["New", "Active", "Resolved", "Closed"]);
+        }
+      }
+    }
+    return new Set(["New", "Active", "Resolved", "Closed"]);
+  });
   const monthParam = useMemo(
     () => format(currentDate, "yyyy-MM"),
     [currentDate]
@@ -241,6 +277,27 @@ export default function Home() {
   useEffect(() => {
     fetchDayOffs();
   }, [fetchDayOffs]);
+
+  // Persist currentDate to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('projectManager.currentDate', currentDate.toISOString());
+    }
+  }, [currentDate]);
+
+  // Persist viewMode to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('projectManager.viewMode', viewMode);
+    }
+  }, [viewMode]);
+
+  // Persist visibleStatuses to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('projectManager.visibleStatuses', JSON.stringify(Array.from(visibleStatuses)));
+    }
+  }, [visibleStatuses]);
 
   const dayOffMap = useMemo(
     () => new Map(dayOffs.map((dayOff) => [dayOff.date, dayOff] as const)),
