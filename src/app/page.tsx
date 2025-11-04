@@ -44,12 +44,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AddTaskModal } from "@/features/tasks";
+import { WorkItemModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { Bug, ListTodo, GripVertical } from "lucide-react";
-import { ShieldAlert, Trash2, MoreVertical, TreePalm } from "lucide-react";
+import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -125,6 +125,7 @@ export default function Home() {
   const [showDayOffs, setShowDayOffs] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showBlockers, setShowBlockers] = useState<{ taskId: number; taskTitle: string } | null>(null);
+  const [editingTask, setEditingTask] = useState<{ id: number; title: string; type: "task" | "bug" } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
     date: string;
@@ -914,6 +915,22 @@ export default function Home() {
                               </DropdownMenuItem>
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
+                          {task.external_source !== "azure_devops" && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setEditingTask({
+                                  id: task.id,
+                                  title: task.title,
+                                  type: task.type,
+                                })
+                              }
+                            >
+                              <span className="flex items-center gap-2">
+                                <Pencil className="h-4 w-4" />
+                                <span>Edit Task</span>
+                              </span>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={() =>
                               setShowBlockers({ taskId: task.id, taskTitle: task.title })
@@ -1074,7 +1091,7 @@ export default function Home() {
       </div>
 
       {showAddTask && (
-        <AddTaskModal
+        <WorkItemModal
           onClose={() => setShowAddTask(false)}
           onSuccess={() => {
             setShowAddTask(false);
@@ -1112,6 +1129,17 @@ export default function Home() {
           taskTitle={showBlockers.taskTitle}
           onClose={() => setShowBlockers(null)}
           onSuccess={() => {
+            fetchTasks();
+          }}
+        />
+      )}
+
+      {editingTask && (
+        <WorkItemModal
+          task={editingTask}
+          onClose={() => setEditingTask(null)}
+          onSuccess={() => {
+            setEditingTask(null);
             fetchTasks();
           }}
         />

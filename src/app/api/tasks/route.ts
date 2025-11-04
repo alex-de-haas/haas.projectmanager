@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, title, type } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -109,25 +109,66 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (!status) {
+    // Handle status update
+    if (status !== undefined) {
+      const result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+
+      if (result.changes === 0) {
+        return NextResponse.json(
+          { error: 'Task not found' },
+          { status: 404 }
+        );
+      }
+
       return NextResponse.json(
-        { error: 'Status is required' },
-        { status: 400 }
+        { message: 'Task updated successfully' },
+        { status: 200 }
       );
     }
 
-    const result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+    // Handle title and type update
+    if (title !== undefined || type !== undefined) {
+      const updates: string[] = [];
+      const values: any[] = [];
 
-    if (result.changes === 0) {
+      if (title !== undefined) {
+        updates.push('title = ?');
+        values.push(title);
+      }
+
+      if (type !== undefined) {
+        if (type !== 'task' && type !== 'bug') {
+          return NextResponse.json(
+            { error: 'Type must be either "task" or "bug"' },
+            { status: 400 }
+          );
+        }
+        updates.push('type = ?');
+        values.push(type);
+      }
+
+      values.push(id);
+
+      const result = db.prepare(
+        `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`
+      ).run(...values);
+
+      if (result.changes === 0) {
+        return NextResponse.json(
+          { error: 'Task not found' },
+          { status: 404 }
+        );
+      }
+
       return NextResponse.json(
-        { error: 'Task not found' },
-        { status: 404 }
+        { message: 'Task updated successfully' },
+        { status: 200 }
       );
     }
 
     return NextResponse.json(
-      { message: 'Task updated successfully' },
-      { status: 200 }
+      { error: 'No valid update fields provided' },
+      { status: 400 }
     );
   } catch (error) {
     console.error('Database error:', error);
