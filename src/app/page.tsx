@@ -28,6 +28,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -937,13 +942,53 @@ export default function Home() {
                             )}
                           </div>
                           {hasBlockers && (
-                            <Badge
-                              variant="outline"
-                              className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 flex items-center gap-1 flex-shrink-0"
-                            >
-                              <ShieldAlert className="w-3 h-3" />
-                              <span className="font-semibold">{activeBlockers.length}</span>
-                            </Badge>
+                            <HoverCard openDelay={100} closeDelay={100}>
+                              <HoverCardTrigger>
+                                <Badge
+                                  variant="outline"
+                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 flex items-center gap-1 flex-shrink-0 cursor-help"
+                                >
+                                  <ShieldAlert className="w-3 h-3" />
+                                  <span className="font-semibold">{activeBlockers.length}</span>
+                                </Badge>
+                              </HoverCardTrigger>
+                              <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
+                                <div className="space-y-2">
+                                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                                    <ShieldAlert className="w-4 h-4 text-red-600" />
+                                    Active Blockers ({activeBlockers.length})
+                                  </h4>
+                                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    {activeBlockers.map((blocker) => (
+                                      <div
+                                        key={blocker.id}
+                                        className="text-xs border rounded-md p-2 bg-white"
+                                      >
+                                        <div className="flex items-start justify-between gap-2 mb-1">
+                                          <Badge
+                                            variant="outline"
+                                            className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
+                                              blocker.severity === 'critical'
+                                                ? 'bg-red-100 text-red-700 border-red-300'
+                                                : blocker.severity === 'high'
+                                                ? 'bg-orange-100 text-orange-700 border-orange-300'
+                                                : blocker.severity === 'medium'
+                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                                                : 'bg-blue-100 text-blue-700 border-blue-300'
+                                            }`}
+                                          >
+                                            {blocker.severity}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-gray-700">
+                                          {blocker.comment}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </HoverCardContent>
+                            </HoverCard>
                           )}
                           {task.external_source === "azure_devops" &&
                             task.external_id && (
