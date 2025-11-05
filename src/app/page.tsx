@@ -1072,28 +1072,32 @@ export default function Home() {
                               >
                                 Active
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  handleStatusChange(
-                                    task.id,
-                                    "Resolved",
-                                    task.external_source === "azure_devops"
-                                  )
-                                }
-                              >
-                                Resolved
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  handleStatusChange(
-                                    task.id,
-                                    "Closed",
-                                    task.external_source === "azure_devops"
-                                  )
-                                }
-                              >
-                                Closed
-                              </DropdownMenuItem>
+                              {task.type !== "task" && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    handleStatusChange(
+                                      task.id,
+                                      "Resolved",
+                                      task.external_source === "azure_devops"
+                                    )
+                                  }
+                                >
+                                  Resolved
+                                </DropdownMenuItem>
+                              )}
+                              {task.type !== "bug" && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    handleStatusChange(
+                                      task.id,
+                                      "Closed",
+                                      task.external_source === "azure_devops"
+                                    )
+                                  }
+                                >
+                                  Closed
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuSubContent>
                           </DropdownMenuSub>
                           {task.external_source !== "azure_devops" && (

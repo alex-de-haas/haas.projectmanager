@@ -80,13 +80,38 @@ export async function POST(request: NextRequest) {
         }
 
         // Create patch document to update the status
-        const patchDocument: JsonPatchDocument = [
+        const patchOperations: JsonPatchOperation[] = [
           {
             op: Operation.Add,
             path: '/fields/System.State',
             value: status
           } as JsonPatchOperation
         ];
+
+        // If closing a task or resolving a bug, set completed work hours
+        const shouldUpdateCompletedWork = 
+          (task.type === 'task' && status === 'Closed') ||
+          (task.type === 'bug' && status === 'Resolved');
+
+        if (shouldUpdateCompletedWork) {
+          // Calculate total hours from time entries
+          const timeEntries = db.prepare(
+            'SELECT SUM(hours) as total FROM time_entries WHERE task_id = ?'
+          ).get(taskId) as { total: number | null } | undefined;
+
+          const totalHours = timeEntries?.total || 0;
+
+          if (totalHours > 0) {
+            // Add completed work field to patch document
+            patchOperations.push({
+              op: Operation.Add,
+              path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork',
+              value: totalHours
+            } as JsonPatchOperation);
+          }
+        }
+
+        const patchDocument: JsonPatchDocument = patchOperations;
 
         // Update the work item in Azure DevOps
         await witApi.updateWorkItem(
