@@ -641,6 +641,31 @@ export default function Home() {
       <div className="p-6">
         <div className="flex gap-3 items-center justify-between flex-wrap">
           <div className="flex gap-3 items-center">
+            <div className="flex bg-gray-100 rounded-md p-1">
+              <Button
+                variant={viewMode === "week" ? "default" : "ghost"}
+                size="sm"
+                className={`h-8 px-4 ${
+                  viewMode === "week"
+                    ? "bg-orange-500 text-white hover:bg-orange-600"
+                    : ""
+                }`}
+                onClick={() => setViewMode("week")}
+              >
+                Week
+              </Button>
+              <Button
+                variant={viewMode === "month" ? "default" : "ghost"}
+                size="sm"
+                className="h-8 px-4"
+                onClick={() => setViewMode("month")}
+              >
+                Month
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-center">
             <Button
               onClick={() => changeDate(-1)}
               variant="outline"
@@ -711,29 +736,6 @@ export default function Home() {
             <Button onClick={() => setShowSettings(true)} variant="outline" size="sm" className="h-10">
               Settings
             </Button>
-
-            <div className="flex bg-gray-100 rounded-md p-1">
-              <Button
-                variant={viewMode === "week" ? "default" : "ghost"}
-                size="sm"
-                className={`h-8 px-4 ${
-                  viewMode === "week"
-                    ? "bg-orange-500 text-white hover:bg-orange-600"
-                    : ""
-                }`}
-                onClick={() => setViewMode("week")}
-              >
-                Week
-              </Button>
-              <Button
-                variant={viewMode === "month" ? "default" : "ghost"}
-                size="sm"
-                className="h-8 px-4"
-                onClick={() => setViewMode("month")}
-              >
-                Month
-              </Button>
-            </div>
           </div>
         </div>
       </div>
