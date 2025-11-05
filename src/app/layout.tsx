@@ -1,9 +1,9 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'Time Tracker',
-  description: 'Track time spent on tasks and bugs',
+  title: "Time Tracker",
+  description: "Track time spent on tasks and bugs",
 };
 
 export default function RootLayout({
