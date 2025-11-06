@@ -55,6 +55,7 @@ import { WorkItemModal } from "@/features/tasks";
 import { SettingsModal, ImportModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Bug, ListTodo, GripVertical } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
@@ -109,7 +110,7 @@ function SortableRow({ id, children, rowClassName, dragHandleBgClassName }: Sort
           className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
           title="Drag to reorder"
         >
-          <GripVertical className="w-4 h-4 text-gray-400" />
+          <GripVertical className="w-4 h-4 text-muted-foreground" />
         </div>
       </td>
       {children}
@@ -633,7 +634,7 @@ export default function Home() {
       <div className="p-6">
         <div className="flex gap-3 items-center justify-between flex-wrap">
           <div className="flex gap-3 items-center">
-            <div className="flex bg-gray-100 rounded-md p-1">
+            <div className="flex bg-muted rounded-md p-1">
               <Button
                 variant={viewMode === "week" ? "default" : "ghost"}
                 size="sm"
@@ -728,6 +729,7 @@ export default function Home() {
             <Button onClick={() => setShowSettings(true)} variant="outline" size="sm" className="h-10">
               Settings
             </Button>
+            <ThemeToggle />
           </div>
         </div>
       </div>
@@ -736,39 +738,39 @@ export default function Home() {
         <div className="overflow-auto h-full">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
-                <th className="p-3 sticky left-0 bg-gray-50 z-10" style={{ width: "40px" }}>
+              <tr className="bg-muted border-b border-border sticky top-0 z-20">
+                <th className="p-3 sticky left-0 bg-muted dark:bg-muted z-[21]" style={{ width: "40px" }}>
                   {/* Drag handle column */}
                 </th>
-                <th className="p-3 text-left font-normal text-gray-600 text-sm sticky left-[40px] bg-gray-50 z-10 overflow-hidden w-[400px]">
+                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden w-[400px]">
                   {/* Empty for task names */}
                 </th>
                 {calendarDays.map((day) => {
                   const headerClass = day.isToday
-                    ? "bg-orange-100"
+                    ? "bg-orange-100 dark:bg-orange-950/50"
                     : day.isDayOff
-                    ? "bg-purple-100"
+                    ? "bg-purple-100 dark:bg-purple-950/50"
                     : day.isWeekend
-                    ? "bg-gray-200"
-                    : "bg-gray-50";
+                    ? "bg-muted/50"
+                    : "bg-muted";
 
                   const title = day.isDayOff
                     ? day.dayOff?.description || "Day off"
                     : "";
 
                   const textClass = day.isToday
-                    ? "text-orange-600"
+                    ? "text-orange-600 dark:text-orange-400"
                     : day.isDayOff
-                    ? "text-purple-700"
+                    ? "text-purple-700 dark:text-purple-400"
                     : day.isWeekend
-                    ? "text-gray-600"
-                    : "text-gray-900";
+                    ? "text-muted-foreground"
+                    : "text-foreground";
 
                   const subTextClass = day.isToday
-                    ? "text-orange-600"
+                    ? "text-orange-600 dark:text-orange-400"
                     : day.isDayOff
-                    ? "text-purple-600"
-                    : "text-gray-500";
+                    ? "text-purple-600 dark:text-purple-400"
+                    : "text-muted-foreground";
 
                   return (
                     <th
@@ -793,7 +795,7 @@ export default function Home() {
                   );
                 })}
                 <th
-                  className="p-3 text-center font-normal text-gray-600 text-sm bg-gray-50 sticky right-0 z-10"
+                  className="p-3 text-center font-normal text-muted-foreground text-sm bg-muted dark:bg-muted sticky right-0 z-[21]"
                   style={{ minWidth: "100px", width: "100px" }}
                 >
                   Total
@@ -828,22 +830,22 @@ export default function Home() {
                   if (hasBlockers) {
                     switch (highestSeverity) {
                       case 'critical':
-                        return "group border-b border-gray-200 bg-red-100 hover:bg-red-200";
+                        return "group border-b border-border bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900";
                       case 'high':
-                        return "group border-b border-gray-200 bg-orange-100 hover:bg-orange-200";
+                        return "group border-b border-border bg-orange-100 hover:bg-orange-200 dark:bg-orange-950 dark:hover:bg-orange-900";
                       case 'medium':
-                        return "group border-b border-gray-200 bg-yellow-100 hover:bg-yellow-200";
+                        return "group border-b border-border bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-950 dark:hover:bg-yellow-900";
                       case 'low':
-                        return "group border-b border-gray-200 bg-blue-100 hover:bg-blue-200";
+                        return "group border-b border-border bg-blue-100 hover:bg-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900";
                     }
                   }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
-                    return "group border-b border-gray-200 bg-blue-50 hover:bg-blue-100";
+                    return "group border-b border-border bg-blue-50 hover:bg-blue-100 dark:bg-blue-950 dark:hover:bg-blue-900";
                   } else if (status === 'resolved' || status === 'closed') {
-                    return "group border-b border-gray-200 bg-green-50 hover:bg-green-100";
+                    return "group border-b border-border bg-green-50 hover:bg-green-100 dark:bg-green-950 dark:hover:bg-green-900";
                   }
-                  return "group border-b border-gray-200 hover:bg-gray-100";
+                  return "group border-b border-border hover:bg-muted dark:hover:bg-muted";
                 };
 
                 // Get sticky column background color based on blockers and status
@@ -851,22 +853,22 @@ export default function Home() {
                   if (hasBlockers) {
                     switch (highestSeverity) {
                       case 'critical':
-                        return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
                       case 'high':
-                        return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
                       case 'medium':
-                        return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
                       case 'low':
-                        return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 z-10";
+                        return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                     }
                   }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
-                    return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 z-10";
+                    return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                   } else if (status === 'resolved' || status === 'closed') {
-                    return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 z-10";
+                    return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                   }
-                  return "py-2 px-3 sticky left-[40px] bg-white group-hover:bg-gray-100 z-10";
+                  return "py-2 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
                 };
 
                 // Get drag handle background color
@@ -874,22 +876,22 @@ export default function Home() {
                   if (hasBlockers) {
                     switch (highestSeverity) {
                       case 'critical':
-                        return "sticky left-0 bg-red-100 group-hover:bg-red-200 z-10";
+                        return "sticky left-0 bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
                       case 'high':
-                        return "sticky left-0 bg-orange-100 group-hover:bg-orange-200 z-10";
+                        return "sticky left-0 bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
                       case 'medium':
-                        return "sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 z-10";
+                        return "sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
                       case 'low':
-                        return "sticky left-0 bg-blue-100 group-hover:bg-blue-200 z-10";
+                        return "sticky left-0 bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                     }
                   }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
-                    return "sticky left-0 bg-blue-50 group-hover:bg-blue-100 z-10";
+                    return "sticky left-0 bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                   } else if (status === 'resolved' || status === 'closed') {
-                    return "sticky left-0 bg-green-50 group-hover:bg-green-100 z-10";
+                    return "sticky left-0 bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                   }
-                  return "sticky left-0 bg-white group-hover:bg-gray-100 z-10";
+                  return "sticky left-0 bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
                 };
 
                 return (
@@ -905,15 +907,15 @@ export default function Home() {
                     >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
-                        <div className="font-medium text-sm text-gray-900 flex items-center gap-1.5 min-w-0">
+                        <div className="font-medium text-sm text-foreground flex items-center gap-1.5 min-w-0">
                           <div
                             className="flex items-center justify-center flex-shrink-0"
                             title={task.type === "bug" ? "Bug" : "Task"}
                           >
                             {task.type === "bug" ? (
-                              <Bug className="w-4 h-4 text-red-600" />
+                              <Bug className="w-4 h-4 text-red-600 dark:text-red-500" />
                             ) : (
-                              <ListTodo className="w-4 h-4 text-blue-500" />
+                              <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
                             )}
                           </div>
                           {hasBlockers && (
@@ -921,7 +923,7 @@ export default function Home() {
                               <HoverCardTrigger>
                                 <Badge
                                   variant="outline"
-                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 flex items-center gap-1 flex-shrink-0 cursor-help"
+                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-help"
                                 >
                                   <ShieldAlert className="w-3 h-3" />
                                   <span className="font-semibold">{activeBlockers.length}</span>
@@ -930,32 +932,32 @@ export default function Home() {
                               <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
                                 <div className="space-y-2">
                                   <h4 className="text-sm font-semibold flex items-center gap-2">
-                                    <ShieldAlert className="w-4 h-4 text-red-600" />
+                                    <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
                                     Active Blockers ({activeBlockers.length})
                                   </h4>
                                   <div className="space-y-2 max-h-60 overflow-y-auto">
                                     {activeBlockers.map((blocker) => (
                                       <div
                                         key={blocker.id}
-                                        className="text-xs border rounded-md p-2 bg-white"
+                                        className="text-xs border rounded-md p-2 bg-background"
                                       >
                                         <div className="flex items-start justify-between gap-2 mb-1">
                                           <Badge
                                             variant="outline"
                                             className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
                                               blocker.severity === 'critical'
-                                                ? 'bg-red-100 text-red-700 border-red-300'
+                                                ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800'
                                                 : blocker.severity === 'high'
-                                                ? 'bg-orange-100 text-orange-700 border-orange-300'
+                                                ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800'
                                                 : blocker.severity === 'medium'
-                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                                                : 'bg-blue-100 text-blue-700 border-blue-300'
+                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800'
+                                                : 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800'
                                             }`}
                                           >
                                             {blocker.severity}
                                           </Badge>
                                         </div>
-                                        <p className="text-gray-700">
+                                        <p className="text-foreground">
                                           {blocker.comment}
                                         </p>
                                       </div>
@@ -969,7 +971,7 @@ export default function Home() {
                             task.external_id && (
                               <Badge
                                 variant="outline"
-                                className="border-blue-200 bg-blue-50 text-blue-700 text-xs h-5 flex-shrink-0"
+                                className="border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 text-xs h-5 flex-shrink-0"
                                 title={`Azure DevOps Work Item ${parseInt(
                                   task.external_id
                                 )}`}
@@ -981,13 +983,13 @@ export default function Home() {
                             variant="outline"
                             className={`h-5 px-2 text-xs flex-shrink-0 ${
                               task.status?.toLowerCase() === "active"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
                                 : task.status?.toLowerCase() === "resolved" ||
                                   task.status?.toLowerCase() === "closed"
-                                ? "bg-green-50 text-green-700 border-green-200"
+                                ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
                                 : task.status?.toLowerCase() === "new"
-                                ? "bg-gray-50 text-gray-700 border-gray-200"
-                                : "bg-gray-50 text-gray-700 border-gray-200"
+                                ? "bg-muted text-muted-foreground border-border"
+                                : "bg-muted text-muted-foreground border-border"
                             }`}
                           >
                             {task.status || "New"}
@@ -997,7 +999,7 @@ export default function Home() {
                             task.external_id ? (
                               <button
                                 onClick={() => handleTaskClick(task)}
-                                className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-left truncate block w-full"
+                                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
                                 title={`${task.title} - Open in Azure DevOps`}
                               >
                                 {task.title}
@@ -1007,13 +1009,13 @@ export default function Home() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span title={`Created: ${format(new Date(task.created_at), "PPpp")}`}>
                             Created: {format(new Date(task.created_at), "dd MMM yyyy")}
                           </span>
                           {task.completed_at && (
                             <>
-                              <span className="text-gray-300">•</span>
+                              <span className="text-border">•</span>
                               <span title={`Completed: ${format(new Date(task.completed_at), "PPpp")}`}>
                                 Completed: {format(new Date(task.completed_at), "dd MMM yyyy")}
                               </span>
@@ -1144,39 +1146,39 @@ export default function Home() {
                       if (hasBlockers) {
                         switch (highestSeverity) {
                           case 'critical':
-                            return { bg: 'bg-red-100', hover: 'group-hover:bg-red-200' };
+                            return { bg: 'bg-red-100 dark:bg-red-950', hover: 'group-hover:bg-red-200 dark:group-hover:bg-red-900' };
                           case 'high':
-                            return { bg: 'bg-orange-100', hover: 'group-hover:bg-orange-200' };
+                            return { bg: 'bg-orange-100 dark:bg-orange-950', hover: 'group-hover:bg-orange-200 dark:group-hover:bg-orange-900' };
                           case 'medium':
-                            return { bg: 'bg-yellow-100', hover: 'group-hover:bg-yellow-200' };
+                            return { bg: 'bg-yellow-100 dark:bg-yellow-950', hover: 'group-hover:bg-yellow-200 dark:group-hover:bg-yellow-900' };
                           case 'low':
-                            return { bg: 'bg-blue-100', hover: 'group-hover:bg-blue-200' };
+                            return { bg: 'bg-blue-100 dark:bg-blue-950', hover: 'group-hover:bg-blue-200 dark:group-hover:bg-blue-900' };
                         }
                       }
                       const status = task.status?.toLowerCase();
                       if (status === 'active') {
-                        return { bg: 'bg-blue-50', hover: 'group-hover:bg-blue-100' };
+                        return { bg: 'bg-blue-50 dark:bg-blue-950', hover: 'group-hover:bg-blue-100 dark:group-hover:bg-blue-900' };
                       } else if (status === 'resolved' || status === 'closed') {
-                        return { bg: 'bg-green-50', hover: 'group-hover:bg-green-100' };
+                        return { bg: 'bg-green-50 dark:bg-green-950', hover: 'group-hover:bg-green-100 dark:group-hover:bg-green-900' };
                       }
-                      return { bg: 'bg-white', hover: 'group-hover:bg-gray-100' };
+                      return { bg: 'bg-background dark:bg-card', hover: 'group-hover:bg-muted dark:group-hover:bg-muted' };
                     };
 
                     const baseColor = getBaseCellColor();
 
                     // Special day types override the base color
                     const cellClass = day.isToday
-                      ? "bg-orange-50 group-hover:bg-orange-200"
+                      ? "bg-orange-50 group-hover:bg-orange-200 dark:bg-orange-950/40 dark:group-hover:bg-orange-950/60"
                       : day.isDayOff
-                      ? "bg-purple-50 group-hover:bg-purple-200"
+                      ? "bg-purple-50 group-hover:bg-purple-200 dark:bg-purple-950/40 dark:group-hover:bg-purple-950/60"
                       : day.isWeekend
-                      ? "bg-gray-100 group-hover:bg-gray-300"
+                      ? "bg-muted/50 group-hover:bg-muted"
                       : `${baseColor.bg} ${baseColor.hover}`;
 
                     return (
                       <td
                         key={day.key}
-                        className={`py-2 px-3 text-center cursor-pointer transition-colors ${cellClass}`}
+                        className={`py-2 px-3 text-center cursor-pointer ${cellClass}`}
                         onClick={() =>
                           !isEditing && handleCellClick(task.id, day.key, hours)
                         }
@@ -1190,28 +1192,28 @@ export default function Home() {
                             onBlur={handleCellSave}
                             onKeyDown={handleKeyPress}
                             autoFocus
-                            className="w-20 text-center h-9 border-2 border-blue-500"
+                            className="w-20 text-center h-9 border-2 border-blue-500 dark:border-blue-400"
                           />
                         ) : hours > 0 ? (
-                          <span className="text-sm font-medium text-gray-900">
+                          <span className="text-sm font-medium text-foreground">
                             {formatTimeDisplay(hours)}
                           </span>
                         ) : (
-                          <span className="text-gray-400">-</span>
+                          <span className="text-muted-foreground/50">-</span>
                         )}
                       </td>
                     );
                   })}
                   <td
-                    className={`py-2 px-3 text-center font-semibold text-sm text-gray-900 sticky right-0 z-10 ${
+                    className={`py-2 px-3 text-center font-semibold text-sm text-foreground sticky right-0 z-10 ${
                       hasBlockers 
-                        ? highestSeverity === 'critical' ? 'bg-red-100 group-hover:bg-red-200' :
-                          highestSeverity === 'high' ? 'bg-orange-100 group-hover:bg-orange-200' :
-                          highestSeverity === 'medium' ? 'bg-yellow-100 group-hover:bg-yellow-200' :
-                          'bg-blue-100 group-hover:bg-blue-200'
-                        : task.status?.toLowerCase() === 'active' ? 'bg-blue-50 group-hover:bg-blue-100' :
-                          task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'bg-green-50 group-hover:bg-green-100' :
-                          'bg-white group-hover:bg-gray-100'
+                        ? highestSeverity === 'critical' ? 'bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900' :
+                          highestSeverity === 'high' ? 'bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900' :
+                          highestSeverity === 'medium' ? 'bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900' :
+                          'bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900'
+                        : task.status?.toLowerCase() === 'active' ? 'bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900' :
+                          task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900' :
+                          'bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted'
                     }`}
                     style={{ minWidth: "100px", width: "100px" }}
                   >
@@ -1224,11 +1226,11 @@ export default function Home() {
               </SortableContext>
             </DndContext>
             <tfoot>
-              <tr className="bg-gray-50 border-t-2 border-gray-300 sticky bottom-0 z-10">
-                <td className="p-3 sticky left-0 bg-gray-50 z-10" style={{ width: "40px" }}>
+              <tr className="bg-muted border-t-2 border-border sticky bottom-0 z-10">
+                <td className="p-3 sticky left-0 bg-muted dark:bg-muted z-[11]" style={{ width: "40px" }}>
                   {/* Empty drag handle cell */}
                 </td>
-                <td className="p-3 sticky left-[40px] bg-gray-50 z-10 overflow-hidden w-[400px]">
+                <td className="p-3 sticky left-[40px] bg-muted dark:bg-muted z-[11] overflow-hidden w-[400px]">
                   {/* Empty cell */}
                 </td>
                 {calendarDays.map((day, index) => {
@@ -1237,12 +1239,12 @@ export default function Home() {
                   const hasHidden = allTotal !== total;
                   
                   const cellClass = day.isToday
-                    ? "bg-orange-100 text-orange-900"
+                    ? "bg-orange-100 text-orange-900 dark:bg-orange-950/50 dark:text-orange-400"
                     : day.isDayOff
-                    ? "bg-purple-100 text-purple-900"
+                    ? "bg-purple-100 text-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
                     : day.isWeekend
-                    ? "bg-gray-200 text-gray-700"
-                    : "bg-gray-50 text-gray-900";
+                    ? "bg-muted/50 text-muted-foreground"
+                    : "bg-muted text-foreground";
 
                   return (
                     <td
@@ -1253,7 +1255,7 @@ export default function Home() {
                       <div className="flex flex-col items-center">
                         <span>{allTotal > 0 ? formatTimeDisplay(allTotal) : "0"}</span>
                         {hasHidden && (
-                          <span className="text-xs text-gray-500 font-normal">
+                          <span className="text-xs text-muted-foreground font-normal">
                             ({formatTimeDisplay(total)} visible)
                           </span>
                         )}
@@ -1262,13 +1264,13 @@ export default function Home() {
                   );
                 })}
                 <td
-                  className="p-3 text-center font-bold text-sm text-gray-900 bg-gray-50 sticky right-0 z-10"
+                  className="p-3 text-center font-bold text-sm text-foreground bg-muted dark:bg-muted sticky right-0 z-[11]"
                   style={{ minWidth: "100px", width: "100px" }}
                 >
                   <div className="flex flex-col items-center">
                     <span>{formatTimeDisplay(allGrandTotal)}</span>
                     {allGrandTotal !== grandTotal && (
-                      <span className="text-xs text-gray-500 font-normal">
+                      <span className="text-xs text-muted-foreground font-normal">
                         ({formatTimeDisplay(grandTotal)} visible)
                       </span>
                     )}
