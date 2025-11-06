@@ -16,6 +16,7 @@ import {
   isSunday,
 } from "date-fns";
 import type { TaskWithTimeEntries, DayOff } from "@/types";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,7 +25,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -122,8 +122,6 @@ export default function Home() {
   const [dayOffs, setDayOffs] = useState<DayOff[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   
   // Initialize state from localStorage
   const [currentDate, setCurrentDate] = useState(() => {
@@ -210,11 +208,10 @@ export default function Home() {
         if (!response.ok) throw new Error("Failed to fetch tasks");
         const data = await response.json();
         setTasks(data);
-        setError("");
       } catch (err) {
-        setError(
-          "Failed to load tasks. Please check your database connection."
-        );
+        toast.error("Failed to load tasks", {
+          description: "Please check your database connection."
+        });
         console.error(err);
       } finally {
         if (showLoader) setLoading(false);
@@ -441,7 +438,7 @@ export default function Home() {
       setEditingCell(null);
       setEditValue("");
     } catch (err) {
-      alert("Failed to save time entry");
+      toast.error("Failed to save time entry");
       console.error(err);
     }
   }, [editValue, editingCell, fetchTasks]);
@@ -532,8 +529,9 @@ export default function Home() {
       if (!response.ok) throw new Error("Failed to delete task");
 
       await fetchTasks();
+      toast.success("Task deleted successfully");
     } catch (err) {
-      alert("Failed to delete task");
+      toast.error("Failed to delete task");
       console.error(err);
     }
   };
@@ -561,28 +559,22 @@ export default function Home() {
       
       // Show feedback message
       if (result.synced) {
-        setSuccessMessage("Status updated and synced with Azure DevOps");
+        toast.success("Status updated and synced with Azure DevOps");
       } else if (result.localOnly) {
-        setSuccessMessage(result.message || "Status updated locally");
+        toast.info(result.message || "Status updated locally");
       } else {
-        setSuccessMessage("Status updated successfully");
+        toast.success("Status updated successfully");
       }
-
-      // Clear message after 3 seconds
-      setTimeout(() => setSuccessMessage(""), 3000);
 
       await fetchTasks();
     } catch (err) {
-      setError("Failed to update status");
-      setTimeout(() => setError(""), 3000);
+      toast.error("Failed to update status");
       console.error(err);
     }
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    setError("");
-    setSuccessMessage("");
     
     try {
       // First, refresh Azure DevOps tasks
@@ -595,25 +587,20 @@ export default function Home() {
         console.log("Azure DevOps refresh result:", result);
         
         if (result.updated > 0) {
-          // Show success message
-          setSuccessMessage(`Successfully updated ${result.updated} task(s) from Azure DevOps`);
-          setTimeout(() => setSuccessMessage(""), 5000);
+          toast.success(`Successfully updated ${result.updated} task(s) from Azure DevOps`);
         } else if (result.skipped > 0) {
-          setSuccessMessage(
-            `All ${result.skipped} imported task(s) are up to date`
-          );
-          setTimeout(() => setSuccessMessage(""), 5000);
+          toast.info(`All ${result.skipped} imported task(s) are up to date`);
         }
       } else if (refreshResponse.status === 400) {
         // Settings not configured, silently skip
         console.log("Azure DevOps settings not configured, skipping refresh");
       } else {
         const errorData = await refreshResponse.json();
-        setError(errorData.error || "Failed to refresh Azure DevOps tasks");
+        toast.error(errorData.error || "Failed to refresh Azure DevOps tasks");
       }
     } catch (err) {
       console.error("Error refreshing Azure DevOps tasks:", err);
-      setError("An error occurred while refreshing tasks");
+      toast.error("An error occurred while refreshing tasks");
     } finally {
       // Always fetch latest tasks from database
       await fetchTasks();
@@ -744,18 +731,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {successMessage && (
-        <Alert className="mb-6 border-green-200 bg-green-50 text-green-800">
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="overflow-hidden h-[calc(100vh-88px)]">
         <div className="overflow-auto h-full">
