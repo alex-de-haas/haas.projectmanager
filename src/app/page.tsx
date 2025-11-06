@@ -1032,6 +1032,19 @@ export default function Home() {
                             )}
                           </div>
                         </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <span title={`Created: ${format(new Date(task.created_at), "PPpp")}`}>
+                            Created: {format(new Date(task.created_at), "dd MMM yyyy")}
+                          </span>
+                          {task.completed_at && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span title={`Completed: ${format(new Date(task.completed_at), "PPpp")}`}>
+                                Completed: {format(new Date(task.completed_at), "dd MMM yyyy")}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

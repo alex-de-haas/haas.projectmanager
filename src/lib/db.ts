@@ -103,6 +103,20 @@ const initDb = () => {
   } catch (error) {
     console.error('Migration error:', error);
   }
+
+  // Migration: Add completed_at column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const hasCompletedAtColumn = tableInfo.some(col => col.name === 'completed_at');
+    
+    if (!hasCompletedAtColumn) {
+      console.log('Adding completed_at column to tasks table...');
+      db.exec('ALTER TABLE tasks ADD COLUMN completed_at DATETIME');
+      console.log('Completed_at column added successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
 };
 
 // Initialize on first import

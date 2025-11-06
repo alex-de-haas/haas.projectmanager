@@ -27,8 +27,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update local status first
-    db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, taskId);
+    // Determine if status is a "completed" state
+    const completedStatuses = ['closed', 'resolved', 'done', 'completed'];
+    const isCompleted = completedStatuses.includes(status.toLowerCase());
+    
+    const wasCompleted = task.status ? completedStatuses.includes(task.status.toLowerCase()) : false;
+
+    // Update local status and completed_at
+    if (isCompleted && !wasCompleted) {
+      // Task is being completed - set completed_at to now
+      db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, taskId);
+    } else if (!isCompleted && wasCompleted) {
+      // Task is being reopened - clear completed_at
+      db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, taskId);
+    } else {
+      // Status change doesn't affect completion - just update status
+      db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, taskId);
+    }
 
     // If task is linked to Azure DevOps, update it there too
     if (task.external_source === 'azure_devops' && task.external_id) {

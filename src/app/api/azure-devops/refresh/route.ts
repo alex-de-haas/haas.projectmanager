@@ -86,6 +86,10 @@ export async function POST(request: NextRequest) {
       const title = workItem.fields['System.Title'] as string || `Work Item ${workItem.id}`;
       const workItemType = (workItem.fields['System.WorkItemType'] as string || 'Task').toLowerCase();
       const status = workItem.fields['System.State'] as string || null;
+      const closedDate = workItem.fields['Microsoft.VSTS.Common.ClosedDate'] as string || 
+                        workItem.fields['Microsoft.VSTS.Common.ResolvedDate'] as string || 
+                        workItem.fields['System.ClosedDate'] as string || 
+                        null;
 
       // Map Azure DevOps work item types to our task types
       let taskType: 'task' | 'bug' = 'task';
@@ -101,11 +105,16 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Format completed_at for comparison (convert both to ISO string format if they exist)
+      const taskCompletedAt = task.completed_at ? new Date(task.completed_at).toISOString() : null;
+      const workItemCompletedAt = closedDate ? new Date(closedDate).toISOString() : null;
+
       // Check if anything changed
       const hasChanges = 
         task.title !== title || 
         task.type !== taskType || 
-        task.status !== status;
+        task.status !== status ||
+        taskCompletedAt !== workItemCompletedAt;
 
       if (!hasChanges) {
         skipped.push({ id: workItem.id, reason: 'No changes detected' });
@@ -115,11 +124,11 @@ export async function POST(request: NextRequest) {
       // Update task
       const stmt = db.prepare(`
         UPDATE tasks 
-        SET title = ?, type = ?, status = ?
+        SET title = ?, type = ?, status = ?, completed_at = ?
         WHERE id = ?
       `);
 
-      stmt.run(title, taskType, status, task.id);
+      stmt.run(title, taskType, status, closedDate, task.id);
       
       updated.push({ id: workItem.id, title, status: status || 'N/A' });
     }

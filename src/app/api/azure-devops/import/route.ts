@@ -104,6 +104,10 @@ export async function POST(request: NextRequest) {
       const title = workItem.fields['System.Title'] as string || `Work Item ${workItem.id}`;
       const workItemType = (workItem.fields['System.WorkItemType'] as string || 'Task').toLowerCase();
       const status = workItem.fields['System.State'] as string || null;
+      const closedDate = workItem.fields['Microsoft.VSTS.Common.ClosedDate'] as string || 
+                        workItem.fields['Microsoft.VSTS.Common.ResolvedDate'] as string || 
+                        workItem.fields['System.ClosedDate'] as string || 
+                        null;
       
       // Map Azure DevOps work item types to our task types
       let taskType: 'task' | 'bug' = 'task';
@@ -125,11 +129,11 @@ export async function POST(request: NextRequest) {
 
       // Insert task
       const stmt = db.prepare(`
-        INSERT INTO tasks (title, type, status, external_id, external_source, display_order)
-        VALUES (?, ?, ?, ?, 'azure_devops', ?)
+        INSERT INTO tasks (title, type, status, external_id, external_source, display_order, completed_at)
+        VALUES (?, ?, ?, ?, 'azure_devops', ?, ?)
       `);
 
-      const result = stmt.run(title, taskType, status, workItem.id, newOrder);
+      const result = stmt.run(title, taskType, status, workItem.id, newOrder, closedDate);
       
       const newTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
       imported.push(newTask);

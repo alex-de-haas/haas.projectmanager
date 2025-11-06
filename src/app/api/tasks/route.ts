@@ -15,8 +15,16 @@ export async function GET(request: NextRequest) {
     const startDate = `${year}-${monthNum}-01`;
     const endDate = `${year}-${monthNum}-31`;
 
-    // Fetch all tasks ordered by display_order, with fallback to created_at
-    const tasks = db.prepare('SELECT * FROM tasks ORDER BY COALESCE(display_order, 999999), created_at ASC').all() as Task[];
+    // Fetch tasks that overlap with the selected period
+    // A task overlaps if:
+    // - It was created before or during the period AND
+    // - It was either not completed yet OR completed during or after the period start
+    const tasks = db.prepare(`
+      SELECT * FROM tasks 
+      WHERE DATE(created_at) <= ?
+        AND (completed_at IS NULL OR DATE(completed_at) >= ?)
+      ORDER BY COALESCE(display_order, 999999), created_at ASC
+    `).all(endDate, startDate) as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
@@ -111,7 +119,34 @@ export async function PATCH(request: NextRequest) {
 
     // Handle status update
     if (status !== undefined) {
-      const result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+      // Determine if status is a "completed" state
+      const completedStatuses = ['closed', 'resolved', 'done', 'completed'];
+      const isCompleted = completedStatuses.includes(status.toLowerCase());
+      
+      // Get current task to check if status changed
+      const currentTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(id) as { status?: string | null } | undefined;
+      
+      if (!currentTask) {
+        return NextResponse.json(
+          { error: 'Task not found' },
+          { status: 404 }
+        );
+      }
+
+      const wasCompleted = currentTask.status ? completedStatuses.includes(currentTask.status.toLowerCase()) : false;
+      
+      // Update status and completed_at
+      let result;
+      if (isCompleted && !wasCompleted) {
+        // Task is being completed - set completed_at to now
+        result = db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+      } else if (!isCompleted && wasCompleted) {
+        // Task is being reopened - clear completed_at
+        result = db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, id);
+      } else {
+        // Status change doesn't affect completion - just update status
+        result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+      }
 
       if (result.changes === 0) {
         return NextResponse.json(

@@ -8,6 +8,7 @@ export interface Task {
   external_id?: string | null;
   external_source?: string | null;
   created_at: Date;
+  completed_at?: Date | null;
 }
 
 export interface TimeEntry {
