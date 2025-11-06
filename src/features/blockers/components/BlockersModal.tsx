@@ -177,15 +177,15 @@ export default function BlockersModal({
   const getSeverityColor = (severity: BlockerSeverity) => {
     switch (severity) {
       case "critical":
-        return "bg-red-100 text-red-800 border-red-300";
+        return "bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-200 dark:border-red-800";
       case "high":
-        return "bg-orange-100 text-orange-800 border-orange-300";
+        return "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:border-orange-800";
       case "medium":
-        return "bg-yellow-100 text-yellow-800 border-yellow-300";
+        return "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-200 dark:border-yellow-800";
       case "low":
-        return "bg-blue-100 text-blue-800 border-blue-300";
+        return "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-300";
+        return "bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700";
     }
   };
 
@@ -205,7 +205,7 @@ export default function BlockersModal({
 
         <div className="space-y-6">
           {/* Add New Blocker */}
-          <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
             <h3 className="font-semibold mb-3">Add New Blocker</h3>
             <div className="space-y-3">
               <div>
@@ -239,7 +239,7 @@ export default function BlockersModal({
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-200">
               {error}
             </div>
           )}
@@ -247,14 +247,14 @@ export default function BlockersModal({
           {/* Active Blockers */}
           {activeBlockers.length > 0 && (
             <div>
-              <h3 className="font-semibold mb-3 text-red-700">
+              <h3 className="font-semibold mb-3 text-red-700 dark:text-red-400">
                 Active Blockers ({activeBlockers.length})
               </h3>
               <div className="space-y-3">
                 {activeBlockers.map((blocker) => (
                   <div
                     key={blocker.id}
-                    className="border rounded-lg p-4 bg-white"
+                    className="border rounded-lg p-4 bg-white dark:bg-gray-950"
                   >
                     {editingId === blocker.id ? (
                       <div className="space-y-3">
@@ -328,8 +328,8 @@ export default function BlockersModal({
                             </Button>
                           </div>
                         </div>
-                        <p className="text-sm text-gray-700">{blocker.comment}</p>
-                        <p className="text-xs text-gray-500 mt-2">
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{blocker.comment}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                           Created: {new Date(blocker.created_at).toLocaleString()}
                         </p>
                       </div>
@@ -343,14 +343,14 @@ export default function BlockersModal({
           {/* Resolved Blockers */}
           {resolvedBlockers.length > 0 && (
             <div>
-              <h3 className="font-semibold mb-3 text-green-700">
+              <h3 className="font-semibold mb-3 text-green-700 dark:text-green-400">
                 Resolved Blockers ({resolvedBlockers.length})
               </h3>
               <div className="space-y-3">
                 {resolvedBlockers.map((blocker) => (
                   <div
                     key={blocker.id}
-                    className="border rounded-lg p-4 bg-green-50 opacity-70"
+                    className="border rounded-lg p-4 bg-green-50 opacity-70 dark:bg-green-950"
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <Badge className={getSeverityColor(blocker.severity)}>
@@ -375,8 +375,8 @@ export default function BlockersModal({
                         </Button>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700">{blocker.comment}</p>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{blocker.comment}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                       Resolved: {blocker.resolved_at ? new Date(blocker.resolved_at).toLocaleString() : "N/A"}
                     </p>
                   </div>
@@ -388,7 +388,7 @@ export default function BlockersModal({
           {loading && <div className="text-center py-4">Loading blockers...</div>}
 
           {!loading && blockers.length === 0 && (
-            <div className="text-center py-4 text-gray-500">
+            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
               No blockers for this task
             </div>
           )}
