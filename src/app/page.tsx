@@ -124,6 +124,7 @@ export default function Home() {
   const [dayOffs, setDayOffs] = useState<DayOff[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [defaultDayLength, setDefaultDayLength] = useState(8);
   
   // Initialize state from localStorage
   const [currentDate, setCurrentDate] = useState(() => {
@@ -282,6 +283,24 @@ export default function Home() {
     fetchDayOffs();
   }, [fetchDayOffs]);
 
+  // Fetch default day length setting
+  useEffect(() => {
+    const fetchDefaultDayLength = async () => {
+      try {
+        const response = await fetch("/api/settings?key=default_day_length");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.value) {
+            setDefaultDayLength(parseFloat(data.value));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load default day length:", err);
+      }
+    };
+    fetchDefaultDayLength();
+  }, []);
+
   // Persist currentDate to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -396,6 +415,22 @@ export default function Home() {
         0
       ),
     [tasks]
+  );
+
+  // Calculate cumulative overwork time for each day (incrementing from start of month)
+  const cumulativeOverwork = useMemo(
+    () => {
+      let cumulative = 0;
+      return calendarDays.map((day, index) => {
+        const actualHours = allTotalHoursByDay[index];
+        // Only count expected hours for workdays (not weekends or day-offs)
+        const expectedHours = (day.isWeekend || day.isDayOff) ? 0 : defaultDayLength;
+        const dailyDifference = actualHours - expectedHours;
+        cumulative += dailyDifference;
+        return cumulative;
+      });
+    },
+    [calendarDays, allTotalHoursByDay, defaultDayLength]
   );
 
   const toggleStatusVisibility = (status: string) => {
@@ -1238,6 +1273,9 @@ export default function Home() {
                   const total = totalHoursByDay[index];
                   const allTotal = allTotalHoursByDay[index];
                   const hasHidden = allTotal !== total;
+                  const overwork = cumulativeOverwork[index];
+                  const isFuture = day.date > new Date();
+                  const showOverwork = !day.isWeekend && !day.isDayOff && !isFuture && overwork !== 0;
                   
                   const cellClass = day.isToday
                     ? "bg-orange-100 text-orange-900 dark:bg-orange-950/50 dark:text-orange-400"
@@ -1253,11 +1291,20 @@ export default function Home() {
                       className={`p-3 text-center font-semibold text-sm ${cellClass}`}
                       style={{ minWidth: "100px", width: "100px" }}
                     >
-                      <div className="flex flex-col items-center">
+                      <div className="flex flex-col items-center gap-0.5">
                         <span>{allTotal > 0 ? formatTimeDisplay(allTotal) : "0"}</span>
                         {hasHidden && (
                           <span className="text-xs text-muted-foreground font-normal">
                             ({formatTimeDisplay(total)} visible)
+                          </span>
+                        )}
+                        {showOverwork && (
+                          <span className={`text-xs font-semibold ${
+                            overwork > 0 
+                              ? 'text-green-600 dark:text-green-400' 
+                              : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {overwork > 0 ? '+' : ''}{formatTimeDisplay(Math.abs(overwork))}
                           </span>
                         )}
                       </div>
