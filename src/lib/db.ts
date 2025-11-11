@@ -117,6 +117,18 @@ const initDb = () => {
   } catch (error) {
     console.error('Migration error:', error);
   }
+
+  // Insert default settings if they don't exist
+  try {
+    const defaultDayLengthSetting = db.prepare('SELECT * FROM settings WHERE key = ?').get('default_day_length');
+    if (!defaultDayLengthSetting) {
+      console.log('Creating default_day_length setting...');
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('default_day_length', '8');
+      console.log('Default day length setting created (8 hours)');
+    }
+  } catch (error) {
+    console.error('Error creating default settings:', error);
+  }
 };
 
 // Initialize on first import

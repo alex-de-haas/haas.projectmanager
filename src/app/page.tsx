@@ -52,7 +52,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkItemModal } from "@/features/tasks";
-import { SettingsModal, ImportModal } from "@/features/azure-devops";
+import { ImportModal } from "@/features/azure-devops";
+import { GeneralSettingsModal } from "@/features/settings";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -1292,7 +1293,7 @@ export default function Home() {
         />
       )}
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showSettings && <GeneralSettingsModal onClose={() => setShowSettings(false)} />}
 
       {showImport && (
         <ImportModal

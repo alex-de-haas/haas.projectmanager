@@ -38,6 +38,10 @@ export interface AzureDevOpsSettings {
   pat: string;
 }
 
+export interface GeneralSettings {
+  default_day_length: number;
+}
+
 export interface AzureDevOpsWorkItem {
   id: number;
   title: string;
