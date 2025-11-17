@@ -343,11 +343,14 @@ export default function Home() {
       return eachDayOfInterval(interval).map((date) => {
         const key = format(date, "yyyy-MM-dd");
         const dayOff = dayOffMap.get(key);
+        const hasDayOff = Boolean(dayOff);
+        const isHalfDay = Boolean(dayOff?.is_half_day);
         return {
           date,
           key,
           dayOff,
-          isDayOff: Boolean(dayOff),
+          isDayOff: hasDayOff,
+          isHalfDay,
           isWeekend: isSaturday(date) || isSunday(date),
           isToday: isToday(date),
         };
@@ -423,8 +426,12 @@ export default function Home() {
       let cumulative = 0;
       return calendarDays.map((day, index) => {
         const actualHours = allTotalHoursByDay[index];
-        // Only count expected hours for workdays (not weekends or day-offs)
-        const expectedHours = (day.isWeekend || day.isDayOff) ? 0 : defaultDayLength;
+        // Only count expected hours for workdays (half-day entries count as half)
+        const expectedHours = day.isWeekend
+          ? 0
+          : day.isDayOff
+          ? (day.isHalfDay ? defaultDayLength / 2 : 0)
+          : defaultDayLength;
         const dailyDifference = actualHours - expectedHours;
         cumulative += dailyDifference;
         return cumulative;
@@ -790,8 +797,10 @@ export default function Home() {
                     ? "bg-muted/50"
                     : "bg-muted";
 
+                  const dayOffLabel = day.isHalfDay ? "Half day" : "Day off";
+                  const description = day.dayOff?.description;
                   const title = day.isDayOff
-                    ? day.dayOff?.description || "Day off"
+                    ? `${dayOffLabel}${description ? ` • ${description}` : ""}`
                     : "";
 
                   const textClass = day.isToday
@@ -823,7 +832,7 @@ export default function Home() {
                         {day.isDayOff && (
                           <div className="text-[10px] font-medium flex items-center justify-center gap-1">
                             <TreePalm className="w-3 h-3" />
-                            <span>Day Off</span>
+                            <span>{day.isHalfDay ? "Half Day" : "Day Off"}</span>
                           </div>
                         )}
                       </div>
@@ -1275,7 +1284,7 @@ export default function Home() {
                   const hasHidden = allTotal !== total;
                   const overwork = cumulativeOverwork[index];
                   const isFuture = day.date > new Date();
-                  const showOverwork = !day.isWeekend && !day.isDayOff && !isFuture && overwork !== 0;
+                  const showOverwork = !day.isWeekend && (!day.isDayOff || day.isHalfDay) && !isFuture && overwork !== 0;
                   
                   const cellClass = day.isToday
                     ? "bg-orange-100 text-orange-900 dark:bg-orange-950/50 dark:text-orange-400"

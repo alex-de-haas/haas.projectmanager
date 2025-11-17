@@ -31,6 +31,7 @@ export function DayOffsModal({
   const [date, setDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [description, setDescription] = useState("");
+  const [isHalfDay, setIsHalfDay] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">(
@@ -69,7 +70,7 @@ export function DayOffsModal({
             const response = await fetch("/api/day-offs", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ date: dateStr, description: description || null }),
+              body: JSON.stringify({ date: dateStr, description: description || null, isHalfDay }),
             });
 
             if (response.ok) {
@@ -99,7 +100,7 @@ export function DayOffsModal({
         const response = await fetch("/api/day-offs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, description: description || null }),
+          body: JSON.stringify({ date, description: description || null, isHalfDay }),
         });
 
         if (!response.ok) {
@@ -114,6 +115,7 @@ export function DayOffsModal({
       setDate("");
       setEndDate("");
       setDescription("");
+      setIsHalfDay(false);
       setTimeout(() => {
         onSuccess();
       }, 1000);
@@ -177,6 +179,33 @@ export function DayOffsModal({
                 Date Range
               </Button>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Duration</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={!isHalfDay ? "default" : "outline"}
+                onClick={() => setIsHalfDay(false)}
+                className="flex-1"
+              >
+                Full day
+              </Button>
+              <Button
+                type="button"
+                variant={isHalfDay ? "default" : "outline"}
+                onClick={() => setIsHalfDay(true)}
+                className="flex-1"
+              >
+                Half day
+              </Button>
+            </div>
+            {isHalfDay && (
+              <p className="text-xs text-muted-foreground">
+                Counts as half of your default work day.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -267,11 +296,10 @@ export function DayOffsModal({
                     <div className="font-medium text-sm text-gray-900">
                       {format(new Date(dayOff.date), "EEE, MMM dd, yyyy")}
                     </div>
-                    {dayOff.description && (
-                      <div className="text-xs text-gray-600">
-                        {dayOff.description}
-                      </div>
-                    )}
+                    <div className="text-xs text-gray-600">
+                      {dayOff.is_half_day ? "Half day" : "Full day"}
+                      {dayOff.description ? ` • ${dayOff.description}` : ""}
+                    </div>
                   </div>
                   <Button
                     variant="ghost"

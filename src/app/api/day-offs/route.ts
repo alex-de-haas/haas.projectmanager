@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { date, description } = body;
+    const { date, description, isHalfDay = false } = body;
 
     if (!date) {
       return NextResponse.json(
@@ -55,9 +55,9 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      'INSERT INTO day_offs (date, description) VALUES (?, ?)'
+      'INSERT INTO day_offs (date, description, is_half_day) VALUES (?, ?, ?)'
     );
-    const result = stmt.run(date, description || null);
+    const result = stmt.run(date, description || null, isHalfDay ? 1 : 0);
 
     const newDayOff = db
       .prepare('SELECT * FROM day_offs WHERE id = ?')

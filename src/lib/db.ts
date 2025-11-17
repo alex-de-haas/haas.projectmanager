@@ -43,6 +43,7 @@ const initDb = () => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT NOT NULL UNIQUE,
       description TEXT,
+      is_half_day INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -113,6 +114,20 @@ const initDb = () => {
       console.log('Adding completed_at column to tasks table...');
       db.exec('ALTER TABLE tasks ADD COLUMN completed_at DATETIME');
       console.log('Completed_at column added successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: Add is_half_day column to day_offs table if it doesn't exist
+  try {
+    const dayOffTableInfo = db.prepare("PRAGMA table_info(day_offs)").all() as Array<{ name: string }>;
+    const hasHalfDayColumn = dayOffTableInfo.some(col => col.name === 'is_half_day');
+
+    if (!hasHalfDayColumn) {
+      console.log('Adding is_half_day column to day_offs table...');
+      db.exec('ALTER TABLE day_offs ADD COLUMN is_half_day INTEGER NOT NULL DEFAULT 0');
+      console.log('is_half_day column added successfully');
     }
   } catch (error) {
     console.error('Migration error:', error);

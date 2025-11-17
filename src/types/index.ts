@@ -53,6 +53,7 @@ export interface DayOff {
   id: number;
   date: string; // YYYY-MM-DD format
   description?: string | null;
+  is_half_day: number;
   created_at: Date;
 }
 
