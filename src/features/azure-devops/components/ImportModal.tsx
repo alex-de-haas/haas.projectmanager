@@ -167,7 +167,7 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
           ) : filteredWorkItems.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {workItems.length === 0
-                ? "No work items found assigned to you"
+                ? "No new work items available to import"
                 : "No work items match your filter"}
             </div>
           ) : (

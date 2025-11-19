@@ -68,6 +68,21 @@ export async function GET(request: NextRequest) {
       undefined
     );
 
+    const importedRows = db.prepare(`
+      SELECT external_id
+      FROM tasks
+      WHERE external_source = 'azure_devops'
+        AND external_id IS NOT NULL
+    `).all() as Array<{ external_id: string | number | null }>;
+
+    const importedIds = new Set<number>();
+    importedRows.forEach((row) => {
+      const numericId = Number(row.external_id);
+      if (!Number.isNaN(numericId)) {
+        importedIds.add(numericId);
+      }
+    });
+
     const result: AzureDevOpsWorkItem[] = (workItems || [])
       .filter(wi => wi.id && wi.fields)
       .map(wi => ({
@@ -75,7 +90,8 @@ export async function GET(request: NextRequest) {
         title: wi.fields?.['System.Title'] || 'Untitled',
         type: wi.fields?.['System.WorkItemType'] || 'Unknown',
         state: wi.fields?.['System.State'] || 'Unknown',
-      }));
+      }))
+      .filter((item) => !importedIds.has(item.id));
 
     return NextResponse.json({ workItems: result });
   } catch (error) {
