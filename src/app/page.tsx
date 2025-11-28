@@ -652,6 +652,42 @@ export default function Home() {
     }
   };
 
+  const handleExportToExcel = async () => {
+    try {
+      const response = await fetch(`/api/export?month=${monthParam}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to export');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Extract filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `work-items-${monthParam}.xlsx`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success('Work items exported successfully');
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export work items');
+    }
+  };
+
   if (initialLoading) {
     return (
       <div className="mx-auto h-dvh">
@@ -768,6 +804,14 @@ export default function Home() {
               disabled={isRefreshing}
             >
               {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+            <Button 
+              onClick={handleExportToExcel} 
+              variant="outline"
+              size="sm"
+              className="h-10"
+            >
+              Export to Excel
             </Button>
             <Button onClick={() => setShowSettings(true)} variant="outline" size="sm" className="h-10">
               Settings

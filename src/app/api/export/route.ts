@@ -1,0 +1,150 @@
+import { NextRequest, NextResponse } from 'next/server';
+import ExcelJS from 'exceljs';
+import db from '@/lib/db';
+import type { Task, TimeEntry, Settings, AzureDevOpsSettings } from '@/types';
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const month = searchParams.get('month'); // Format: YYYY-MM
+
+    if (!month) {
+      return NextResponse.json({ error: 'Month parameter is required' }, { status: 400 });
+    }
+
+    const [year, monthNum] = month.split('-');
+    const startDate = `${year}-${monthNum}-01`;
+    const endDate = `${year}-${monthNum}-31`;
+
+    // Fetch Azure DevOps settings for building links
+    let azureSettings: AzureDevOpsSettings | null = null;
+    try {
+      const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+      if (setting) {
+        azureSettings = JSON.parse(setting.value) as AzureDevOpsSettings;
+      }
+    } catch {
+      // Settings not configured, continue without links
+    }
+
+    // Fetch tasks that overlap with the selected period
+    const tasks = db.prepare(`
+      SELECT * FROM tasks 
+      WHERE DATE(created_at) <= ?
+        AND (completed_at IS NULL OR DATE(completed_at) >= ?)
+      ORDER BY COALESCE(display_order, 999999), created_at ASC
+    `).all(endDate, startDate) as Task[];
+
+    // Fetch time entries for the specified month
+    const timeEntries = db.prepare(
+      'SELECT * FROM time_entries WHERE date >= ? AND date <= ?'
+    ).all(startDate, endDate) as TimeEntry[];
+
+    // Calculate total hours per task
+    const taskHours = new Map<number, number>();
+    timeEntries.forEach(entry => {
+      const current = taskHours.get(entry.task_id) || 0;
+      taskHours.set(entry.task_id, current + entry.hours);
+    });
+
+    // Create workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Project Manager';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Work Items');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 15 },
+      { header: 'Type', key: 'type', width: 10 },
+      { header: 'Title', key: 'title', width: 60 },
+      { header: 'Total Hours', key: 'hours', width: 15 },
+    ];
+
+    // Style header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+
+    // Add data rows
+    tasks.forEach(task => {
+      const totalHours = taskHours.get(task.id) || 0;
+      
+      // Build Azure DevOps link if applicable
+      let link = '';
+      if (task.external_source === 'azure_devops' && task.external_id && azureSettings?.organization && azureSettings?.project) {
+        link = `https://dev.azure.com/${azureSettings.organization}/${azureSettings.project}/_workitems/edit/${task.external_id}`;
+      }
+
+      const displayId = task.external_id ? task.external_id.replace(/\.0$/, '') : '';
+
+      const row = worksheet.addRow({
+        id: displayId,
+        type: task.type === 'bug' ? 'Bug' : 'Task',
+        title: task.title,
+        hours: totalHours,
+      });
+
+      // Make the ID a clickable link if we have an Azure DevOps link
+      if (link) {
+        const idCell = row.getCell('id');
+        idCell.value = {
+          text: displayId,
+          hyperlink: link,
+        };
+        idCell.font = { color: { argb: 'FF0066CC' }, underline: true };
+      }
+    });
+
+    // Add total row
+    const totalHours = Array.from(taskHours.values()).reduce((sum, hours) => sum + hours, 0);
+    const totalRow = worksheet.addRow({
+      id: '',
+      type: '',
+      title: 'TOTAL',
+      hours: totalHours,
+    });
+    totalRow.font = { bold: true };
+    totalRow.getCell('title').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF0F0F0' }
+    };
+    totalRow.getCell('hours').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF0F0F0' }
+    };
+
+    // Format hours column as number with 2 decimal places
+    worksheet.getColumn('hours').numFmt = '0.00';
+
+    // Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    // Create response with Excel file
+    const monthName = new Date(`${year}-${monthNum}-01`).toLocaleString('default', { month: 'long' });
+    const filename = `work-items-${monthName}-${year}.xlsx`;
+
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (error) {
+    console.error('Export error:', error);
+    return NextResponse.json(
+      { error: 'Failed to export work items' },
+      { status: 500 }
+    );
+  }
+}
