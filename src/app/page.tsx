@@ -367,17 +367,6 @@ export default function Home() {
     [tasks, visibleStatuses]
   );
 
-  const totalHoursByDay = useMemo(
-    () =>
-      calendarDays.map((day) =>
-        filteredTasks.reduce(
-          (sum, task) => sum + (task.timeEntries[day.key] || 0),
-          0
-        )
-      ),
-    [calendarDays, filteredTasks]
-  );
-
   const totalHoursByTask = useMemo(
     () =>
       filteredTasks.map((task) =>
@@ -387,11 +376,6 @@ export default function Home() {
         )
       ),
     [filteredTasks]
-  );
-
-  const grandTotal = useMemo(
-    () => totalHoursByTask.reduce((sum, hours) => sum + hours, 0),
-    [totalHoursByTask]
   );
 
   // Calculate totals including hidden tasks
@@ -419,6 +403,22 @@ export default function Home() {
       ),
     [tasks]
   );
+
+  const estimatedMonthHours = useMemo(() => {
+    if (viewMode !== "month") return null;
+
+    return calendarDays.reduce((sum, day) => {
+      if (day.isWeekend) {
+        return sum;
+      }
+
+      if (day.isDayOff) {
+        return sum + (day.isHalfDay ? defaultDayLength / 2 : 0);
+      }
+
+      return sum + defaultDayLength;
+    }, 0);
+  }, [viewMode, calendarDays, defaultDayLength]);
 
   // Calculate cumulative overwork time for each day (incrementing from start of month)
   const cumulativeOverwork = useMemo(
@@ -773,6 +773,16 @@ export default function Home() {
               Settings
             </Button>
             <ThemeToggle />
+            {estimatedMonthHours !== null && (
+              <div className="text-sm text-muted-foreground flex items-center gap-1">
+                <span>Est. month hours:</span>
+                <span className="font-semibold text-foreground">
+                  {estimatedMonthHours > 0
+                    ? formatTimeDisplay(estimatedMonthHours)
+                    : "0:00"}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1279,9 +1289,7 @@ export default function Home() {
                   {/* Empty cell */}
                 </td>
                 {calendarDays.map((day, index) => {
-                  const total = totalHoursByDay[index];
                   const allTotal = allTotalHoursByDay[index];
-                  const hasHidden = allTotal !== total;
                   const overwork = cumulativeOverwork[index];
                   const isFuture = day.date > new Date();
                   const showOverwork = !day.isWeekend && (!day.isDayOff || day.isHalfDay) && !isFuture && overwork !== 0;
@@ -1302,11 +1310,6 @@ export default function Home() {
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         <span>{allTotal > 0 ? formatTimeDisplay(allTotal) : "0"}</span>
-                        {hasHidden && (
-                          <span className="text-xs text-muted-foreground font-normal">
-                            ({formatTimeDisplay(total)} visible)
-                          </span>
-                        )}
                         {showOverwork && (
                           <span className={`text-xs font-semibold ${
                             overwork > 0 
@@ -1326,11 +1329,6 @@ export default function Home() {
                 >
                   <div className="flex flex-col items-center">
                     <span>{formatTimeDisplay(allGrandTotal)}</span>
-                    {allGrandTotal !== grandTotal && (
-                      <span className="text-xs text-muted-foreground font-normal">
-                        ({formatTimeDisplay(grandTotal)} visible)
-                      </span>
-                    )}
                   </div>
                 </td>
               </tr>
