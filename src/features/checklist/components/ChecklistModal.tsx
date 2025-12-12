@@ -1,0 +1,382 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import type { ChecklistItem } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Trash2, GripVertical, Plus } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+interface ChecklistModalProps {
+  taskId: number;
+  taskTitle: string;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+interface SortableItemProps {
+  item: ChecklistItem;
+  onToggle: (item: ChecklistItem) => void;
+  onDelete: (id: number) => void;
+  onEdit: (id: number, title: string) => void;
+}
+
+function SortableItem({ item, onToggle, onDelete, onEdit }: SortableItemProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(item.title);
+  
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleSaveEdit = () => {
+    if (editTitle.trim() && editTitle !== item.title) {
+      onEdit(item.id, editTitle.trim());
+    } else {
+      setEditTitle(item.title);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSaveEdit();
+    } else if (e.key === "Escape") {
+      setEditTitle(item.title);
+      setIsEditing(false);
+    }
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 bg-background border rounded-md group ${
+        item.is_completed ? "opacity-60" : ""
+      }`}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+        title="Drag to reorder"
+      >
+        <GripVertical className="w-4 h-4 text-muted-foreground" />
+      </div>
+      
+      <Checkbox
+        checked={!!item.is_completed}
+        onCheckedChange={() => onToggle(item)}
+        className="flex-shrink-0"
+      />
+      
+      {isEditing ? (
+        <Input
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onBlur={handleSaveEdit}
+          onKeyDown={handleKeyDown}
+          autoFocus
+          className="flex-1 h-8"
+        />
+      ) : (
+        <span
+          className={`flex-1 cursor-pointer ${
+            item.is_completed ? "line-through text-muted-foreground" : ""
+          }`}
+          onClick={() => setIsEditing(true)}
+          title="Click to edit"
+        >
+          {item.title}
+        </span>
+      )}
+      
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+        onClick={() => onDelete(item.id)}
+        title="Delete item"
+      >
+        <Trash2 className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
+
+export default function ChecklistModal({
+  taskId,
+  taskTitle,
+  onClose,
+  onSuccess,
+}: ChecklistModalProps) {
+  const [items, setItems] = useState<ChecklistItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newItemTitle, setNewItemTitle] = useState("");
+  const [error, setError] = useState("");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const fetchItems = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/checklist?taskId=${taskId}`);
+      if (!response.ok) throw new Error("Failed to fetch checklist items");
+      const data = await response.json();
+      setItems(data);
+      setError("");
+    } catch (err) {
+      setError("Failed to load checklist items");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+
+  const handleAddItem = async () => {
+    if (!newItemTitle.trim()) return;
+
+    try {
+      const response = await fetch("/api/checklist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: taskId,
+          title: newItemTitle.trim(),
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to add checklist item");
+
+      setNewItemTitle("");
+      await fetchItems();
+      onSuccess?.();
+    } catch (err) {
+      setError("Failed to add checklist item");
+      console.error(err);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAddItem();
+    }
+  };
+
+  const handleToggle = async (item: ChecklistItem) => {
+    try {
+      const response = await fetch("/api/checklist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          is_completed: item.is_completed ? 0 : 1,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to toggle checklist item");
+
+      await fetchItems();
+      onSuccess?.();
+    } catch (err) {
+      setError("Failed to toggle checklist item");
+      console.error(err);
+    }
+  };
+
+  const handleEdit = async (id: number, title: string) => {
+    try {
+      const response = await fetch("/api/checklist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, title }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update checklist item");
+
+      await fetchItems();
+      onSuccess?.();
+    } catch (err) {
+      setError("Failed to update checklist item");
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      const response = await fetch(`/api/checklist?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error("Failed to delete checklist item");
+
+      await fetchItems();
+      onSuccess?.();
+    } catch (err) {
+      setError("Failed to delete checklist item");
+      console.error(err);
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = items.findIndex((item) => item.id === active.id);
+      const newIndex = items.findIndex((item) => item.id === over.id);
+
+      const newItems = arrayMove(items, oldIndex, newIndex);
+      setItems(newItems);
+
+      // Update order in database
+      try {
+        await Promise.all(
+          newItems.map((item, index) =>
+            fetch("/api/checklist", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: item.id, display_order: index }),
+            })
+          )
+        );
+        onSuccess?.();
+      } catch (err) {
+        setError("Failed to reorder items");
+        console.error(err);
+        await fetchItems(); // Revert on error
+      }
+    }
+  };
+
+  const completedCount = items.filter((item) => item.is_completed).length;
+  const totalCount = items.length;
+  const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px] max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span>Checklist</span>
+            {totalCount > 0 && (
+              <span className="text-sm font-normal text-muted-foreground">
+                ({completedCount}/{totalCount} - {progress}%)
+              </span>
+            )}
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground truncate">{taskTitle}</p>
+        </DialogHeader>
+
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+            {error}
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {totalCount > 0 && (
+          <div className="w-full bg-muted rounded-full h-2">
+            <div
+              className="bg-primary h-2 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+
+        {/* Add new item */}
+        <div className="flex gap-2">
+          <Input
+            value={newItemTitle}
+            onChange={(e) => setNewItemTitle(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Add new item..."
+            className="flex-1"
+          />
+          <Button onClick={handleAddItem} disabled={!newItemTitle.trim()}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add
+          </Button>
+        </div>
+
+        {/* Checklist items */}
+        <div className="flex-1 overflow-y-auto space-y-2 min-h-[200px]">
+          {loading ? (
+            <div className="text-center text-muted-foreground py-8">
+              Loading...
+            </div>
+          ) : items.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              No checklist items yet. Add one above!
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={items.map((item) => item.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {items.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    item={item}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                    onEdit={handleEdit}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

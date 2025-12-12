@@ -2,18 +2,33 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Task, TimeEntry, TaskWithTimeEntries, Blocker } from '@/types';
 
+interface ChecklistSummary {
+  task_id: number;
+  total: number;
+  completed: number;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get('month'); // Format: YYYY-MM
+    const startDateParam = searchParams.get('startDate'); // Format: YYYY-MM-DD
+    const endDateParam = searchParams.get('endDate'); // Format: YYYY-MM-DD
 
-    if (!month) {
-      return NextResponse.json({ error: 'Month parameter is required' }, { status: 400 });
+    let startDate: string;
+    let endDate: string;
+
+    // Support both month parameter and explicit date range
+    if (startDateParam && endDateParam) {
+      startDate = startDateParam;
+      endDate = endDateParam;
+    } else if (month) {
+      const [year, monthNum] = month.split('-');
+      startDate = `${year}-${monthNum}-01`;
+      endDate = `${year}-${monthNum}-31`;
+    } else {
+      return NextResponse.json({ error: 'Either month or startDate/endDate parameters are required' }, { status: 400 });
     }
-
-    const [year, monthNum] = month.split('-');
-    const startDate = `${year}-${monthNum}-01`;
-    const endDate = `${year}-${monthNum}-31`;
 
     // Fetch tasks that overlap with the selected period
     // A task overlaps if:
@@ -36,7 +51,26 @@ export async function GET(request: NextRequest) {
       'SELECT * FROM blockers WHERE is_resolved = 0 ORDER BY task_id, created_at DESC'
     ).all() as Blocker[];
 
-    // Combine tasks with their time entries and blockers
+    // Fetch checklist summary for all tasks
+    const checklistSummaries = db.prepare(`
+      SELECT 
+        task_id,
+        COUNT(*) as total,
+        SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
+      FROM checklist_items
+      GROUP BY task_id
+    `).all() as ChecklistSummary[];
+
+    // Create a map of task_id to checklist summary
+    const checklistMap = new Map<number, { total: number; completed: number }>();
+    checklistSummaries.forEach(summary => {
+      checklistMap.set(summary.task_id, {
+        total: summary.total,
+        completed: summary.completed,
+      });
+    });
+
+    // Combine tasks with their time entries, blockers, and checklist summary
     const tasksWithEntries: TaskWithTimeEntries[] = tasks.map(task => {
       const entries: Record<string, number> = {};
       
@@ -47,11 +81,13 @@ export async function GET(request: NextRequest) {
         });
 
       const taskBlockers = blockers.filter(b => b.task_id === task.id);
+      const checklistSummary = checklistMap.get(task.id);
 
       return {
         ...task,
         timeEntries: entries,
         blockers: taskBlockers,
+        checklistSummary,
       };
     });
 

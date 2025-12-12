@@ -22,6 +22,10 @@ export interface TimeEntry {
 export interface TaskWithTimeEntries extends Task {
   timeEntries: Record<string, number>; // date -> hours
   blockers?: Blocker[];
+  checklistSummary?: {
+    total: number;
+    completed: number;
+  };
 }
 
 export interface Settings {
@@ -71,4 +75,14 @@ export interface Blocker {
 
 export interface TaskWithBlockers extends Task {
   blockers: Blocker[];
+}
+
+export interface ChecklistItem {
+  id: number;
+  task_id: number;
+  title: string;
+  is_completed: number; // SQLite uses 0/1 for boolean
+  display_order: number;
+  created_at: Date;
+  completed_at?: Date | null;
 }

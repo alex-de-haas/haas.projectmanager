@@ -59,6 +59,17 @@ const initDb = () => {
       CHECK(severity IN ('low', 'medium', 'high', 'critical'))
     );
 
+    CREATE TABLE IF NOT EXISTS checklist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      is_completed INTEGER DEFAULT 0,
+      display_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_type ON tasks(type);
     CREATE INDEX IF NOT EXISTS idx_created_at ON tasks(created_at);
     CREATE INDEX IF NOT EXISTS idx_external_id ON tasks(external_id);
@@ -67,6 +78,8 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date);
     CREATE INDEX IF NOT EXISTS idx_blocker_task_id ON blockers(task_id);
     CREATE INDEX IF NOT EXISTS idx_blocker_resolved ON blockers(is_resolved);
+    CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
+    CREATE INDEX IF NOT EXISTS idx_checklist_order ON checklist_items(task_id, display_order);
   `);
 
   // Migration: Add status column if it doesn't exist

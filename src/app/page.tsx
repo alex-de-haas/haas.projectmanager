@@ -56,8 +56,9 @@ import { ImportModal } from "@/features/azure-devops";
 import { GeneralSettingsModal } from "@/features/settings";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
+import { ChecklistModal } from "@/features/checklist";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Bug, ListTodo, GripVertical } from "lucide-react";
+import { Bug, ListTodo, GripVertical, ListChecks } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
   DndContext,
@@ -157,6 +158,7 @@ export default function Home() {
   const [showDayOffs, setShowDayOffs] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showBlockers, setShowBlockers] = useState<{ taskId: number; taskTitle: string } | null>(null);
+  const [showChecklist, setShowChecklist] = useState<{ taskId: number; taskTitle: string } | null>(null);
   const [editingTask, setEditingTask] = useState<{ id: number; title: string; type: "task" | "bug" } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
@@ -183,7 +185,7 @@ export default function Home() {
     [currentDate]
   );
 
-  const dayOffRange = useMemo(() => {
+  const dateRange = useMemo(() => {
     if (viewMode === "week") {
       return {
         startDate: format(
@@ -207,7 +209,7 @@ export default function Home() {
     async (showLoader = false) => {
       try {
         if (showLoader) setLoading(true);
-        const response = await fetch(`/api/tasks?month=${monthParam}`);
+        const response = await fetch(`/api/tasks?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
         if (!response.ok) throw new Error("Failed to fetch tasks");
         const data = await response.json();
         setTasks(data);
@@ -221,13 +223,13 @@ export default function Home() {
         setInitialLoading(false);
       }
     },
-    [monthParam]
+    [dateRange]
   );
 
   const fetchDayOffs = useCallback(async () => {
     try {
       const response = await fetch(
-        `/api/day-offs?startDate=${dayOffRange.startDate}&endDate=${dayOffRange.endDate}`
+        `/api/day-offs?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`
       );
       if (!response.ok) throw new Error("Failed to fetch day-offs");
       const data = await response.json();
@@ -235,7 +237,7 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to load day-offs:", err);
     }
-  }, [dayOffRange]);
+  }, [dateRange]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1066,6 +1068,23 @@ export default function Home() {
                               </HoverCardContent>
                             </HoverCard>
                           )}
+                          {task.checklistSummary && task.checklistSummary.total > 0 && (
+                            <Badge
+                              variant="outline"
+                              className={`h-5 px-2 text-xs flex items-center gap-1 flex-shrink-0 cursor-pointer ${
+                                task.checklistSummary.completed === task.checklistSummary.total
+                                  ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
+                                  : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800"
+                              }`}
+                              onClick={() => setShowChecklist({ taskId: task.id, taskTitle: task.title })}
+                              title={`Checklist: ${task.checklistSummary.completed}/${task.checklistSummary.total} completed`}
+                            >
+                              <ListChecks className="w-3 h-3" />
+                              <span className="font-semibold">
+                                {task.checklistSummary.completed}/{task.checklistSummary.total}
+                              </span>
+                            </Badge>
+                          )}
                           {task.external_source === "azure_devops" &&
                             task.external_id && (
                               <Badge
@@ -1216,6 +1235,21 @@ export default function Home() {
                               {hasBlockers && (
                                 <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
                                   {activeBlockers.length}
+                                </Badge>
+                              )}
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setShowChecklist({ taskId: task.id, taskTitle: task.title })
+                            }
+                          >
+                            <span className="flex items-center gap-2">
+                              <ListChecks className="h-4 w-4" />
+                              <span>Checklist</span>
+                              {task.checklistSummary && task.checklistSummary.total > 0 && (
+                                <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
+                                  {task.checklistSummary.completed}/{task.checklistSummary.total}
                                 </Badge>
                               )}
                             </span>
@@ -1419,6 +1453,17 @@ export default function Home() {
           taskId={showBlockers.taskId}
           taskTitle={showBlockers.taskTitle}
           onClose={() => setShowBlockers(null)}
+          onSuccess={() => {
+            fetchTasks();
+          }}
+        />
+      )}
+
+      {showChecklist && (
+        <ChecklistModal
+          taskId={showChecklist.taskId}
+          taskTitle={showChecklist.taskTitle}
+          onClose={() => setShowChecklist(null)}
           onSuccess={() => {
             fetchTasks();
           }}
