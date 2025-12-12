@@ -136,15 +136,19 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
     setTestingLmStudio(true);
     setMessage("");
     try {
-      const response = await fetch(`${lmStudioEndpoint}/v1/models`);
+      const response = await fetch("/api/lm-studio/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: lmStudioEndpoint }),
+      });
+      
+      const data = await response.json();
       
       if (response.ok) {
-        const data = await response.json();
-        const models = data.data?.map((m: { id: string }) => m.id).join(", ") || "No models loaded";
-        setMessage(`✓ Connection successful! Available models: ${models}`);
+        setMessage(`✓ ${data.message}`);
         setMessageType("success");
       } else {
-        setMessage(`✗ Connection failed: ${response.status} - ${response.statusText}`);
+        setMessage(`✗ ${data.error || "Connection failed"}`);
         setMessageType("error");
       }
     } catch (err) {
