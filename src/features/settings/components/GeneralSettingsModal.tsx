@@ -14,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface GeneralSettingsModalProps {
   onClose: () => void;
@@ -31,6 +38,8 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
   // LM Studio settings
   const [lmStudioEndpoint, setLmStudioEndpoint] = useState("http://localhost:1234");
   const [lmStudioModel, setLmStudioModel] = useState("");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,6 +49,25 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
   const [messageType, setMessageType] = useState<"success" | "error">(
     "success"
   );
+
+  const fetchModels = async (endpoint: string) => {
+    setLoadingModels(true);
+    try {
+      const response = await fetch("/api/lm-studio/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint }),
+      });
+      const data = await response.json();
+      if (response.ok && data.models) {
+        setAvailableModels(data.models);
+      }
+    } catch {
+      // Silently fail - models will be empty
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   useEffect(() => {
     loadSettings();
@@ -81,7 +109,11 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
               ? JSON.parse(data.value)
               : data.value;
           setLmStudioEndpoint(settings.endpoint || "http://localhost:1234");
-          setLmStudioModel(settings.model || "");
+          setLmStudioModel(settings.model || "__default__");
+          // Try to fetch models if endpoint is set
+          if (settings.endpoint) {
+            fetchModels(settings.endpoint);
+          }
         }
       }
     } catch (err) {
@@ -147,6 +179,9 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
       if (response.ok) {
         setMessage(`✓ ${data.message}`);
         setMessageType("success");
+        if (data.models && data.models.length > 0) {
+          setAvailableModels(data.models);
+        }
       } else {
         setMessage(`✗ ${data.error || "Connection failed"}`);
         setMessageType("error");
@@ -203,7 +238,10 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: "lm_studio",
-          value: { endpoint: lmStudioEndpoint, model: lmStudioModel },
+          value: { 
+            endpoint: lmStudioEndpoint, 
+            model: lmStudioModel === "__default__" ? "" : lmStudioModel 
+          },
         }),
       });
 
@@ -327,16 +365,30 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="lmStudioModel">Model Name (optional)</Label>
-                  <Input
-                    id="lmStudioModel"
-                    type="text"
+                  <Label htmlFor="lmStudioModel">Model</Label>
+                  <Select
                     value={lmStudioModel}
-                    onChange={(e) => setLmStudioModel(e.target.value)}
-                    placeholder="e.g., qwen2.5-coder-7b-instruct"
-                  />
+                    onValueChange={setLmStudioModel}
+                    disabled={loadingModels}
+                  >
+                    <SelectTrigger id="lmStudioModel">
+                      <SelectValue placeholder={loadingModels ? "Loading models..." : "Select a model (or use default)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">
+                        Use default loaded model
+                      </SelectItem>
+                      {availableModels.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-muted-foreground">
-                    Leave empty to use the default loaded model in LM Studio
+                    {availableModels.length === 0 
+                      ? "Test connection to load available models" 
+                      : `${availableModels.length} model(s) available`}
                   </p>
                 </div>
 
