@@ -46,6 +46,11 @@ export interface GeneralSettings {
   default_day_length: number;
 }
 
+export interface LMStudioSettings {
+  endpoint: string;
+  model: string;
+}
+
 export interface AzureDevOpsWorkItem {
   id: number;
   title: string;

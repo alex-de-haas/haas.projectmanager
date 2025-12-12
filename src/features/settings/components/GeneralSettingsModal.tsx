@@ -28,9 +28,14 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
   const [project, setProject] = useState("");
   const [pat, setPat] = useState("");
 
+  // LM Studio settings
+  const [lmStudioEndpoint, setLmStudioEndpoint] = useState("http://localhost:1234");
+  const [lmStudioModel, setLmStudioModel] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingLmStudio, setTestingLmStudio] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">(
     "success"
@@ -63,6 +68,20 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
           setOrganization(settings.organization || "");
           setProject(settings.project || "");
           setPat(settings.pat || "");
+        }
+      }
+
+      // Load LM Studio settings
+      const lmStudioResponse = await fetch("/api/settings?key=lm_studio");
+      if (lmStudioResponse.ok) {
+        const data = await lmStudioResponse.json();
+        if (data.value) {
+          const settings =
+            typeof data.value === "string"
+              ? JSON.parse(data.value)
+              : data.value;
+          setLmStudioEndpoint(settings.endpoint || "http://localhost:1234");
+          setLmStudioModel(settings.model || "");
         }
       }
     } catch (err) {
@@ -107,6 +126,35 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
     }
   };
 
+  const handleTestLmStudioConnection = async () => {
+    if (!lmStudioEndpoint) {
+      setMessage("Please enter the LM Studio endpoint");
+      setMessageType("error");
+      return;
+    }
+
+    setTestingLmStudio(true);
+    setMessage("");
+    try {
+      const response = await fetch(`${lmStudioEndpoint}/v1/models`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const models = data.data?.map((m: { id: string }) => m.id).join(", ") || "No models loaded";
+        setMessage(`✓ Connection successful! Available models: ${models}`);
+        setMessageType("success");
+      } else {
+        setMessage(`✗ Connection failed: ${response.status} - ${response.statusText}`);
+        setMessageType("error");
+      }
+    } catch (err) {
+      setMessage("✗ Connection failed: Make sure LM Studio is running and the endpoint is correct");
+      setMessageType("error");
+    } finally {
+      setTestingLmStudio(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -145,6 +193,18 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
 
       if (!azureResponse.ok) throw new Error("Failed to save Azure DevOps settings");
 
+      // Save LM Studio settings
+      const lmStudioResponse = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "lm_studio",
+          value: { endpoint: lmStudioEndpoint, model: lmStudioModel },
+        }),
+      });
+
+      if (!lmStudioResponse.ok) throw new Error("Failed to save LM Studio settings");
+
       setMessage("✓ Settings saved successfully!");
       setMessageType("success");
       setTimeout(() => {
@@ -172,9 +232,10 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
         ) : (
           <form onSubmit={handleSave}>
             <Tabs defaultValue="general" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="general">General</TabsTrigger>
                 <TabsTrigger value="azure">Azure DevOps</TabsTrigger>
+                <TabsTrigger value="ai">AI (LM Studio)</TabsTrigger>
               </TabsList>
 
               <TabsContent value="general" className="space-y-4 mt-4">
@@ -245,6 +306,53 @@ export function GeneralSettingsModal({ onClose }: GeneralSettingsModalProps) {
                 >
                   {testing ? "Testing..." : "Test Connection"}
                 </Button>
+              </TabsContent>
+
+              <TabsContent value="ai" className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="lmStudioEndpoint">LM Studio Endpoint</Label>
+                  <Input
+                    id="lmStudioEndpoint"
+                    type="text"
+                    value={lmStudioEndpoint}
+                    onChange={(e) => setLmStudioEndpoint(e.target.value)}
+                    placeholder="http://localhost:1234"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The URL where LM Studio server is running (default: http://localhost:1234)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lmStudioModel">Model Name (optional)</Label>
+                  <Input
+                    id="lmStudioModel"
+                    type="text"
+                    value={lmStudioModel}
+                    onChange={(e) => setLmStudioModel(e.target.value)}
+                    placeholder="e.g., qwen2.5-coder-7b-instruct"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to use the default loaded model in LM Studio
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleTestLmStudioConnection}
+                  disabled={testingLmStudio || saving}
+                  variant="outline"
+                  className="w-full border-purple-600 text-purple-600 hover:bg-purple-50"
+                >
+                  {testingLmStudio ? "Testing..." : "Test Connection"}
+                </Button>
+
+                <div className="rounded-lg border p-3 bg-muted/50">
+                  <p className="text-xs text-muted-foreground">
+                    <strong>Setup:</strong> Download and run LM Studio, load a model, 
+                    then start the local server (default port: 1234). 
+                    This enables AI-powered checklist generation from text.
+                  </p>
+                </div>
               </TabsContent>
             </Tabs>
 

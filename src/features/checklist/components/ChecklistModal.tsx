@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Trash2, GripVertical, Plus } from "lucide-react";
+import { Trash2, GripVertical, Plus, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -148,6 +148,11 @@ export default function ChecklistModal({
   const [loading, setLoading] = useState(true);
   const [newItemTitle, setNewItemTitle] = useState("");
   const [error, setError] = useState("");
+  
+  // AI generation state
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -205,6 +210,40 @@ export default function ChecklistModal({
     if (e.key === "Enter") {
       e.preventDefault();
       handleAddItem();
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiText.trim()) return;
+
+    setAiGenerating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/checklist/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: taskId,
+          text: aiText.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate checklist");
+      }
+
+      setAiText("");
+      setShowAiPanel(false);
+      await fetchItems();
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate checklist from AI");
+      console.error(err);
+    } finally {
+      setAiGenerating(false);
     }
   };
 
@@ -341,7 +380,69 @@ export default function ChecklistModal({
             <Plus className="w-4 h-4 mr-1" />
             Add
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowAiPanel(!showAiPanel)}
+            className="border-purple-600 text-purple-600 hover:bg-purple-50"
+            title="Generate from text using AI"
+          >
+            <Sparkles className="w-4 h-4 mr-1" />
+            AI
+            {showAiPanel ? (
+              <ChevronUp className="w-3 h-3 ml-1" />
+            ) : (
+              <ChevronDown className="w-3 h-3 ml-1" />
+            )}
+          </Button>
         </div>
+
+        {/* AI Generation Panel */}
+        {showAiPanel && (
+          <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Sparkles className="w-4 h-4 text-purple-600" />
+              <span>Paste text below and AI will extract checklist items</span>
+            </div>
+            <textarea
+              value={aiText}
+              onChange={(e) => setAiText(e.target.value)}
+              placeholder="Paste meeting notes, requirements, task descriptions, or any text..."
+              className="w-full min-h-[100px] p-2 text-sm border rounded-md resize-y bg-background"
+              disabled={aiGenerating}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAiText("");
+                  setShowAiPanel(false);
+                }}
+                disabled={aiGenerating}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleAiGenerate}
+                disabled={!aiText.trim() || aiGenerating}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {aiGenerating ? (
+                  <>
+                    <span className="animate-spin mr-1">⏳</span>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    Generate Checklist
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Checklist items */}
         <div className="flex-1 overflow-y-auto space-y-2 min-h-[200px]">

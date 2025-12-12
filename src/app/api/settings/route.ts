@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import type { Settings, AzureDevOpsSettings } from '@/types';
+import type { Settings, AzureDevOpsSettings, LMStudioSettings } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,6 +18,16 @@ export async function GET(request: NextRequest) {
       if (key === 'azure_devops') {
         try {
           const value = JSON.parse(setting.value) as AzureDevOpsSettings;
+          return NextResponse.json({ ...setting, value });
+        } catch {
+          return NextResponse.json(setting);
+        }
+      }
+
+      // Parse JSON value if it's LM Studio settings
+      if (key === 'lm_studio') {
+        try {
+          const value = JSON.parse(setting.value) as LMStudioSettings;
           return NextResponse.json({ ...setting, value });
         } catch {
           return NextResponse.json(setting);
