@@ -1024,7 +1024,9 @@ export default function Home() {
                               <HoverCardTrigger>
                                 <Badge
                                   variant="outline"
-                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-help"
+                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                                  onClick={() => setShowBlockers({ taskId: task.id, taskTitle: task.title })}
+                                  title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? 's' : ''} - Click to manage`}
                                 >
                                   <ShieldAlert className="w-3 h-3" />
                                   <span className="font-semibold">{activeBlockers.length}</span>
