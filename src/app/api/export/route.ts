@@ -50,6 +50,17 @@ export async function GET(request: NextRequest) {
       taskHours.set(entry.task_id, current + entry.hours);
     });
 
+    // Filter out completed tasks (Resolved/Closed) without tracked time in the period
+    const completedStatuses = ['Resolved', 'Closed'];
+    const filteredTasks = tasks.filter(task => {
+      const status = task.status || 'New';
+      if (completedStatuses.includes(status)) {
+        const totalHours = taskHours.get(task.id) || 0;
+        return totalHours > 0;
+      }
+      return true;
+    });
+
     // Create workbook
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Project Manager';
@@ -75,7 +86,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Add data rows
-    tasks.forEach(task => {
+    filteredTasks.forEach(task => {
       const totalHours = taskHours.get(task.id) || 0;
       
       // Build Azure DevOps link if applicable

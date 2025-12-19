@@ -364,9 +364,25 @@ export default function Home() {
   const filteredTasks = useMemo(
     () => tasks.filter(task => {
       const status = task.status || "New";
-      return visibleStatuses.has(status);
+      
+      // First check if status is visible
+      if (!visibleStatuses.has(status)) {
+        return false;
+      }
+      
+      // For completed tasks (Resolved/Closed), only show if they have tracked time in current period
+      const completedStatuses = ["Resolved", "Closed"];
+      if (completedStatuses.includes(status)) {
+        const periodDates = new Set(calendarDays.map(day => day.key));
+        const hasTimeInPeriod = Object.entries(task.timeEntries).some(
+          ([date, hours]) => periodDates.has(date) && hours > 0
+        );
+        return hasTimeInPeriod;
+      }
+      
+      return true;
     }),
-    [tasks, visibleStatuses]
+    [tasks, visibleStatuses, calendarDays]
   );
 
   const totalHoursByTask = useMemo(
