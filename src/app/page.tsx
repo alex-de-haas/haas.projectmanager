@@ -857,7 +857,7 @@ export default function Home() {
                 <th className="p-3 sticky left-0 bg-muted dark:bg-muted z-[21]" style={{ width: "40px" }}>
                   {/* Drag handle column */}
                 </th>
-                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden w-[400px]">
+                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden" style={{ minWidth: "200px", maxWidth: "33vw" }}>
                   {/* Empty for task names */}
                 </th>
                 {calendarDays.map((day) => {
@@ -1020,7 +1020,7 @@ export default function Home() {
                   >
                     <td
                       className={getStickyBgClass()}
-                      style={{ minWidth: "400px", width: "400px" }}
+                      style={{ minWidth: "200px", maxWidth: "33vw" }}
                     >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
@@ -1381,7 +1381,7 @@ export default function Home() {
                 <td className="p-3 sticky left-0 bg-muted dark:bg-muted z-[11]" style={{ width: "40px" }}>
                   {/* Empty drag handle cell */}
                 </td>
-                <td className="p-3 sticky left-[40px] bg-muted dark:bg-muted z-[11] overflow-hidden w-[400px]">
+                <td className="p-3 sticky left-[40px] bg-muted dark:bg-muted z-[11] overflow-hidden" style={{ minWidth: "200px", maxWidth: "33vw" }}>
                   {/* Empty cell */}
                 </td>
                 {calendarDays.map((day, index) => {
