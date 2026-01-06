@@ -866,7 +866,7 @@ export default function Home() {
                     : day.isDayOff
                     ? "bg-purple-100 dark:bg-purple-950/50"
                     : day.isWeekend
-                    ? "bg-muted/50"
+                    ? "bg-slate-100 dark:bg-slate-900/70"
                     : "bg-muted";
 
                   const dayOffLabel = day.isHalfDay ? "Half day" : "Day off";
@@ -880,13 +880,15 @@ export default function Home() {
                     : day.isDayOff
                     ? "text-purple-700 dark:text-purple-400"
                     : day.isWeekend
-                    ? "text-muted-foreground"
+                    ? "text-slate-700 dark:text-slate-100"
                     : "text-foreground";
 
                   const subTextClass = day.isToday
                     ? "text-orange-600 dark:text-orange-400"
                     : day.isDayOff
                     ? "text-purple-600 dark:text-purple-400"
+                    : day.isWeekend
+                    ? "text-slate-600 dark:text-slate-300"
                     : "text-muted-foreground";
 
                   return (
@@ -1323,7 +1325,7 @@ export default function Home() {
                       : day.isDayOff
                       ? "bg-purple-50 group-hover:bg-purple-200 dark:bg-purple-950/40 dark:group-hover:bg-purple-950/60"
                       : day.isWeekend
-                      ? "bg-muted/50 group-hover:bg-muted"
+                      ? "bg-slate-50 group-hover:bg-slate-100 dark:bg-slate-900/60 dark:group-hover:bg-slate-900/40"
                       : `${baseColor.bg} ${baseColor.hover}`;
 
                     return (
@@ -1395,7 +1397,7 @@ export default function Home() {
                     : day.isDayOff
                     ? "bg-purple-100 text-purple-900 dark:bg-purple-950/50 dark:text-purple-400"
                     : day.isWeekend
-                    ? "bg-muted/50 text-muted-foreground"
+                    ? "bg-slate-100 text-slate-800 dark:bg-slate-900/70 dark:text-slate-100"
                     : "bg-muted text-foreground";
 
                   return (
