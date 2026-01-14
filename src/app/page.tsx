@@ -60,13 +60,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { WorkItemModal } from "@/features/tasks";
-import { ImportModal } from "@/features/azure-devops";
+import { ImportModal, ExportToDevOpsModal } from "@/features/azure-devops";
 import { GeneralSettingsModal } from "@/features/settings";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ChecklistModal } from "@/features/checklist";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Bug, ListTodo, GripVertical, ListChecks, Clock3 } from "lucide-react";
+import { Bug, ListTodo, GripVertical, ListChecks, Clock3, Upload } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
   DndContext,
@@ -172,6 +172,7 @@ export default function Home() {
   const [timeEntriesLoading, setTimeEntriesLoading] = useState(false);
   const [timeEntriesError, setTimeEntriesError] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<{ id: number; title: string; type: "task" | "bug" } | null>(null);
+  const [exportToDevOps, setExportToDevOps] = useState<{ id: number; title: string; type: "task" | "bug" } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
     date: string;
@@ -1335,6 +1336,22 @@ export default function Home() {
                               </span>
                             </DropdownMenuItem>
                           )}
+                          {task.external_source !== "azure_devops" && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setExportToDevOps({
+                                  id: task.id,
+                                  title: task.title,
+                                  type: task.type,
+                                })
+                              }
+                            >
+                              <span className="flex items-center gap-2">
+                                <Upload className="h-4 w-4" />
+                                <span>Export to DevOps</span>
+                              </span>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={() =>
                               setShowTimeEntries({ taskId: task.id, taskTitle: task.title })
@@ -1661,6 +1678,17 @@ export default function Home() {
           onClose={() => setEditingTask(null)}
           onSuccess={() => {
             setEditingTask(null);
+            fetchTasks();
+          }}
+        />
+      )}
+
+      {exportToDevOps && (
+        <ExportToDevOpsModal
+          task={exportToDevOps}
+          onClose={() => setExportToDevOps(null)}
+          onSuccess={() => {
+            setExportToDevOps(null);
             fetchTasks();
           }}
         />

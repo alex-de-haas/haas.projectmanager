@@ -1,0 +1,254 @@
+import { NextRequest, NextResponse } from 'next/server';
+import * as azdev from 'azure-devops-node-api';
+import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
+import { JsonPatchDocument, JsonPatchOperation, Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import db from '@/lib/db';
+import type { Settings, AzureDevOpsSettings, Task } from '@/types';
+
+interface ExportRequest {
+  taskId: number;
+  parentWorkItemId?: number;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body: ExportRequest = await request.json();
+    const { taskId, parentWorkItemId } = body;
+
+    if (!taskId) {
+      return NextResponse.json(
+        { error: 'Task ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get the task from database
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
+
+    if (!task) {
+      return NextResponse.json(
+        { error: 'Task not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if task is already linked to Azure DevOps
+    if (task.external_source === 'azure_devops' && task.external_id) {
+      return NextResponse.json(
+        { error: 'Task is already linked to Azure DevOps' },
+        { status: 400 }
+      );
+    }
+
+    // Get Azure DevOps settings
+    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    
+    if (!settingRow) {
+      return NextResponse.json(
+        { error: 'Azure DevOps settings not configured. Please configure in Settings.' },
+        { status: 400 }
+      );
+    }
+
+    let settings: AzureDevOpsSettings;
+    try {
+      settings = JSON.parse(settingRow.value) as AzureDevOpsSettings;
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid Azure DevOps settings format' },
+        { status: 400 }
+      );
+    }
+
+    if (!settings.organization || !settings.project || !settings.pat) {
+      return NextResponse.json(
+        { error: 'Azure DevOps settings incomplete. Please check organization, project, and PAT.' },
+        { status: 400 }
+      );
+    }
+
+    // Create Azure DevOps connection
+    const orgUrl = `https://dev.azure.com/${settings.organization}`;
+    const authHandler = azdev.getPersonalAccessTokenHandler(settings.pat);
+    const connection = new azdev.WebApi(orgUrl, authHandler);
+
+    const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
+
+    // Get the current user's identity (unique name / email)
+    const connectionData = await connection.connect();
+    const currentUserUniqueName = connectionData.authenticatedUser?.providerDisplayName;
+
+    // Map local task type to Azure DevOps work item type
+    const workItemType = task.type === 'bug' ? 'Bug' : 'Task';
+
+    // Build patch document for creating work item
+    const patchOperations: JsonPatchOperation[] = [
+      {
+        op: Operation.Add,
+        path: '/fields/System.Title',
+        value: task.title
+      } as JsonPatchOperation,
+    ];
+
+    // Add assigned to if we have the current user info
+    if (currentUserUniqueName) {
+      patchOperations.push({
+        op: Operation.Add,
+        path: '/fields/System.AssignedTo',
+        value: currentUserUniqueName
+      } as JsonPatchOperation);
+    }
+
+    // Set state if available
+    if (task.status) {
+      patchOperations.push({
+        op: Operation.Add,
+        path: '/fields/System.State',
+        value: task.status
+      } as JsonPatchOperation);
+    }
+
+    // Add parent link if provided
+    if (parentWorkItemId) {
+      patchOperations.push({
+        op: Operation.Add,
+        path: '/relations/-',
+        value: {
+          rel: 'System.LinkTypes.Hierarchy-Reverse',
+          url: `https://dev.azure.com/${settings.organization}/_apis/wit/workItems/${parentWorkItemId}`,
+          attributes: {
+            comment: 'Parent work item'
+          }
+        }
+      } as JsonPatchOperation);
+    }
+
+    const patchDocument: JsonPatchDocument = patchOperations;
+
+    // Create the work item in Azure DevOps
+    const createdWorkItem = await witApi.createWorkItem(
+      undefined,
+      patchDocument,
+      settings.project,
+      workItemType
+    );
+
+    if (!createdWorkItem || !createdWorkItem.id) {
+      return NextResponse.json(
+        { error: 'Failed to create work item in Azure DevOps' },
+        { status: 500 }
+      );
+    }
+
+    // Update local task to link to the new Azure DevOps work item
+    db.prepare(`
+      UPDATE tasks 
+      SET external_id = ?, external_source = 'azure_devops' 
+      WHERE id = ?
+    `).run(createdWorkItem.id.toString(), taskId);
+
+    return NextResponse.json({
+      success: true,
+      workItemId: createdWorkItem.id,
+      message: `Successfully exported to Azure DevOps as work item #${createdWorkItem.id}`
+    });
+
+  } catch (error) {
+    console.error('Error exporting to Azure DevOps:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to export to Azure DevOps' },
+      { status: 500 }
+    );
+  }
+}
+
+// GET endpoint to fetch potential parent work items
+export async function GET() {
+  try {
+    // Get Azure DevOps settings
+    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    
+    if (!settingRow) {
+      return NextResponse.json(
+        { error: 'Azure DevOps settings not configured.' },
+        { status: 400 }
+      );
+    }
+
+    let settings: AzureDevOpsSettings;
+    try {
+      settings = JSON.parse(settingRow.value) as AzureDevOpsSettings;
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid Azure DevOps settings format' },
+        { status: 400 }
+      );
+    }
+
+    if (!settings.organization || !settings.project || !settings.pat) {
+      return NextResponse.json(
+        { error: 'Azure DevOps settings incomplete.' },
+        { status: 400 }
+      );
+    }
+
+    // Create Azure DevOps connection
+    const orgUrl = `https://dev.azure.com/${settings.organization}`;
+    const authHandler = azdev.getPersonalAccessTokenHandler(settings.pat);
+    const connection = new azdev.WebApi(orgUrl, authHandler);
+
+    const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
+
+    // Query for potential parent work items (User Stories, Features, Epics, Product Backlog Items)
+    const wiql = {
+      query: `
+        SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State]
+        FROM WorkItems
+        WHERE ([System.WorkItemType] = 'User Story' 
+          OR [System.WorkItemType] = 'Feature'
+          OR [System.WorkItemType] = 'Epic'
+          OR [System.WorkItemType] = 'Product Backlog Item')
+          AND [System.State] <> 'Closed'
+          AND [System.State] <> 'Removed'
+          AND [System.State] <> 'Done'
+        ORDER BY [System.ChangedDate] DESC
+      `
+    };
+
+    const queryResult = await witApi.queryByWiql(wiql, { project: settings.project });
+    const workItemIds = queryResult?.workItems?.map(wi => wi.id!).filter(Boolean) || [];
+
+    if (workItemIds.length === 0) {
+      return NextResponse.json({ parentWorkItems: [] });
+    }
+
+    // Limit to first 100 items
+    const limitedIds = workItemIds.slice(0, 100);
+
+    // Fetch work item details
+    const workItems = await witApi.getWorkItems(
+      limitedIds,
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    );
+
+    const parentWorkItems = (workItems || [])
+      .filter(wi => wi.id && wi.fields)
+      .map(wi => ({
+        id: wi.id!,
+        title: wi.fields?.['System.Title'] || 'Untitled',
+        type: wi.fields?.['System.WorkItemType'] || 'Unknown',
+        state: wi.fields?.['System.State'] || 'Unknown',
+      }));
+
+    return NextResponse.json({ parentWorkItems });
+  } catch (error) {
+    console.error('Error fetching parent work items:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to fetch parent work items' },
+      { status: 500 }
+    );
+  }
+}
