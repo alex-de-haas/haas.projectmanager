@@ -14,6 +14,7 @@ import {
   addMonths,
   isSaturday,
   isSunday,
+  parseISO,
 } from "date-fns";
 import type { TaskWithTimeEntries, DayOff } from "@/types";
 import { toast } from "sonner";
@@ -51,6 +52,13 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { WorkItemModal } from "@/features/tasks";
 import { ImportModal } from "@/features/azure-devops";
 import { GeneralSettingsModal } from "@/features/settings";
@@ -58,7 +66,7 @@ import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ChecklistModal } from "@/features/checklist";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Bug, ListTodo, GripVertical, ListChecks } from "lucide-react";
+import { Bug, ListTodo, GripVertical, ListChecks, Clock3 } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
   DndContext,
@@ -159,6 +167,10 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showBlockers, setShowBlockers] = useState<{ taskId: number; taskTitle: string } | null>(null);
   const [showChecklist, setShowChecklist] = useState<{ taskId: number; taskTitle: string } | null>(null);
+  const [showTimeEntries, setShowTimeEntries] = useState<{ taskId: number; taskTitle: string } | null>(null);
+  const [timeEntriesByTask, setTimeEntriesByTask] = useState<Record<number, { date: string; hours: number }[]>>({});
+  const [timeEntriesLoading, setTimeEntriesLoading] = useState(false);
+  const [timeEntriesError, setTimeEntriesError] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<{ id: number; title: string; type: "task" | "bug" } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     taskId: number;
@@ -421,6 +433,85 @@ export default function Home() {
       ),
     [tasks]
   );
+
+  const trackedTimeEntries = useMemo<{ date: string; hours: number }[]>(
+    () => {
+      if (!showTimeEntries) return [];
+      const task = tasks.find((t) => t.id === showTimeEntries.taskId);
+      if (!task) return [];
+
+      const cachedEntries = timeEntriesByTask[showTimeEntries.taskId];
+      if (cachedEntries) {
+        return cachedEntries;
+      }
+
+      return Object.entries(task.timeEntries)
+        .filter(([, hours]) => hours > 0)
+        .map(([date, hours]) => ({ date, hours }))
+        .sort((a, b) => (a.date > b.date ? -1 : 1));
+    },
+    [showTimeEntries, tasks, timeEntriesByTask]
+  );
+
+  const trackedTimeTotal = useMemo(
+    () => trackedTimeEntries.reduce((sum, entry) => sum + entry.hours, 0),
+    [trackedTimeEntries]
+  );
+
+  const groupedTimeEntries = useMemo(
+    () => {
+      const groups = new Map<string, { label: string; total: number; entries: { date: string; hours: number }[] }>();
+      trackedTimeEntries.forEach((entry) => {
+        const parsed = parseISO(entry.date);
+        const key = format(parsed, "yyyy-MM");
+        if (!groups.has(key)) {
+          groups.set(key, {
+            label: format(parsed, "LLLL yyyy"),
+            total: 0,
+            entries: [],
+          });
+        }
+        const bucket = groups.get(key)!;
+        bucket.entries.push(entry);
+        bucket.total += entry.hours;
+      });
+      return Array.from(groups.values());
+    },
+    [trackedTimeEntries]
+  );
+
+  useEffect(() => {
+    if (!showTimeEntries) return;
+
+    let cancelled = false;
+    const loadEntries = async () => {
+      setTimeEntriesLoading(true);
+      setTimeEntriesError(null);
+      try {
+        const response = await fetch(`/api/time-entries?taskId=${showTimeEntries.taskId}`);
+        if (!response.ok) throw new Error("Failed to fetch tracked time");
+        const data = await response.json();
+        if (!cancelled) {
+          setTimeEntriesByTask((prev) => ({ ...prev, [showTimeEntries.taskId]: data }));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          setTimeEntriesError("Failed to load tracked time");
+        }
+      } finally {
+        if (!cancelled) {
+          setTimeEntriesLoading(false);
+        }
+      }
+    };
+
+    loadEntries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showTimeEntries]);
 
   const estimatedMonthHours = useMemo(() => {
     if (viewMode !== "month") return null;
@@ -1246,6 +1337,16 @@ export default function Home() {
                           )}
                           <DropdownMenuItem
                             onClick={() =>
+                              setShowTimeEntries({ taskId: task.id, taskTitle: task.title })
+                            }
+                          >
+                            <span className="flex items-center gap-2">
+                              <Clock3 className="h-4 w-4" />
+                              <span>View Tracked Time</span>
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
                               setShowBlockers({ taskId: task.id, taskTitle: task.title })
                             }
                           >
@@ -1434,6 +1535,70 @@ export default function Home() {
           </table>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(showTimeEntries)}
+        onOpenChange={(open) => {
+          if (!open) setShowTimeEntries(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Tracked Time</DialogTitle>
+            <DialogDescription>
+              {showTimeEntries
+                ? `Work item: ${showTimeEntries.taskTitle}`
+                : "Review tracked time entries for this work item."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="border rounded-md overflow-hidden">
+            <div className="grid grid-cols-2 text-xs uppercase tracking-wide text-muted-foreground bg-muted/60 px-3 py-2">
+              <span>Date</span>
+              <span className="text-right">Tracked</span>
+            </div>
+            <div className="max-h-80 overflow-auto divide-y">
+              {timeEntriesLoading ? (
+                <div className="px-3 py-4 text-sm text-muted-foreground">Loading tracked time…</div>
+              ) : timeEntriesError ? (
+                <div className="px-3 py-4 text-sm text-red-600 dark:text-red-400">
+                  {timeEntriesError}
+                </div>
+              ) : trackedTimeEntries.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-muted-foreground">
+                  No tracked time yet.
+                </div>
+              ) : (
+                groupedTimeEntries.map((group) => (
+                  <div key={group.label} className="border-b last:border-b-0">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/50 text-xs font-semibold uppercase tracking-wide">
+                      <span>{group.label}</span>
+                      <span>{formatTimeDisplay(group.total)}</span>
+                    </div>
+                    {group.entries.map((entry) => (
+                      <div
+                        key={`${group.label}-${entry.date}`}
+                        className="grid grid-cols-2 items-center px-3 py-2 hover:bg-muted/50"
+                      >
+                        <span className="text-sm">
+                          {format(parseISO(entry.date), "EEE, dd MMM yyyy")}
+                        </span>
+                        <span className="text-sm font-medium text-right">
+                          {formatTimeDisplay(entry.hours)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex items-center justify-between px-3 py-2 bg-muted/60 text-sm font-semibold">
+              <span>Total</span>
+              <span>{trackedTimeTotal > 0 ? formatTimeDisplay(trackedTimeTotal) : "0:00"}</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {showAddTask && (
         <WorkItemModal

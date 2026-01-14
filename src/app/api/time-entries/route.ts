@@ -41,3 +41,29 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const taskId = searchParams.get('taskId');
+
+    if (!taskId) {
+      return NextResponse.json(
+        { error: 'taskId is required' },
+        { status: 400 }
+      );
+    }
+
+    const entries = db.prepare(
+      'SELECT date, hours FROM time_entries WHERE task_id = ? ORDER BY date DESC'
+    ).all(taskId);
+
+    return NextResponse.json(entries);
+  } catch (error) {
+    console.error('Database error:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch time entries' },
+      { status: 500 }
+    );
+  }
+}
