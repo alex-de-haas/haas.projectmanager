@@ -575,6 +575,11 @@ export default function Home() {
 
     const hours = parseFloat(editValue) || 0;
 
+    if (hours < 0) {
+      toast.error("Hours cannot be negative");
+      return;
+    }
+
     try {
       const response = await fetch("/api/time-entries", {
         method: "POST",
@@ -1457,7 +1462,9 @@ export default function Home() {
                       >
                         {isEditing ? (
                           <Input
-                            type="text"
+                            type="number"
+                            min="0"
+                            step="0.25"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
                             onBlur={handleCellSave}

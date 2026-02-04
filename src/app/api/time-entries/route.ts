@@ -15,6 +15,13 @@ export async function POST(request: NextRequest) {
 
     const hoursValue = parseFloat(hours) || 0;
 
+    if (hoursValue < 0) {
+      return NextResponse.json(
+        { error: 'Hours cannot be negative' },
+        { status: 400 }
+      );
+    }
+
     if (hoursValue === 0) {
       // Delete the entry if hours is 0
       db.prepare(

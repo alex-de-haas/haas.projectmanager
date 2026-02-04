@@ -66,17 +66,34 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fetch work item details
-    const workItems = await witApi.getWorkItems(
-      workItemIds,
-      undefined,
-      undefined,
-      undefined,
-      undefined
-    );
+    const MAX_BATCH_SIZE = 200;
+    const workItems: azdev.WorkItem[] = [];
+
+    for (let i = 0; i < workItemIds.length; i += MAX_BATCH_SIZE) {
+      const batchIds = workItemIds.slice(i, i + MAX_BATCH_SIZE);
+      const batchItems = await witApi.getWorkItems(
+        batchIds,
+        undefined,
+        undefined,
+        undefined,
+        undefined
+      );
+
+      if (batchItems?.length) {
+        workItems.push(...batchItems);
+      }
+    }
 
     const updated: Array<{ id: number; title: string; status: string }> = [];
     const skipped: Array<{ id: number; reason: string }> = [];
+
+    const importedTasksByExternalId = new Map<number, Task>();
+    for (const task of importedTasks) {
+      const externalId = task.external_id ? parseInt(task.external_id) : NaN;
+      if (!isNaN(externalId)) {
+        importedTasksByExternalId.set(externalId, task);
+      }
+    }
 
     for (const workItem of workItems || []) {
       if (!workItem.id || !workItem.fields) {
@@ -98,7 +115,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Find the corresponding task in our database
-      const task = importedTasks.find(t => parseInt(t.external_id!) === workItem.id);
+      const task = importedTasksByExternalId.get(workItem.id);
       
       if (!task) {
         skipped.push({ id: workItem.id, reason: 'Not found in database' });
