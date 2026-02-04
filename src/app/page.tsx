@@ -712,7 +712,10 @@ export default function Home() {
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to update status");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to update status");
+      }
 
       const result = await response.json();
       
@@ -727,7 +730,8 @@ export default function Home() {
 
       await fetchTasks();
     } catch (err) {
-      toast.error("Failed to update status");
+      const message = err instanceof Error ? err.message : "Failed to update status";
+      toast.error(message);
       console.error(err);
     }
   };

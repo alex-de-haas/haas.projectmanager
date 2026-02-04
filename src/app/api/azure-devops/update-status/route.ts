@@ -30,6 +30,26 @@ export async function POST(request: NextRequest) {
     // Determine if status is a "completed" state
     const completedStatuses = ['closed', 'resolved', 'done', 'completed'];
     const isCompleted = completedStatuses.includes(status.toLowerCase());
+
+    if (isCompleted) {
+      const checklistSummary = db.prepare(
+        `SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
+         FROM checklist_items
+         WHERE task_id = ?`
+      ).get(taskId) as { total: number; completed: number | null } | undefined;
+
+      if (checklistSummary && checklistSummary.total > 0) {
+        const completedCount = checklistSummary.completed ?? 0;
+        if (completedCount < checklistSummary.total) {
+          return NextResponse.json(
+            { error: 'Cannot resolve or close a work item until all checklist items are completed.' },
+            { status: 400 }
+          );
+        }
+      }
+    }
     
     const wasCompleted = task.status ? completedStatuses.includes(task.status.toLowerCase()) : false;
 
