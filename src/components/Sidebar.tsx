@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock3, PanelLeftClose, PanelLeftOpen, Rocket } from "lucide-react";
+import { Clock3, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Release Tracking",
     href: "/release-tracking",
     icon: Rocket,
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
   },
 ];
 

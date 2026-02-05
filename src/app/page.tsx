@@ -61,7 +61,6 @@ import {
 } from "@/components/ui/dialog";
 import { WorkItemModal } from "@/features/tasks";
 import { ImportModal, ExportToDevOpsModal } from "@/features/azure-devops";
-import { GeneralSettingsModal } from "@/features/settings";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ChecklistModal } from "@/features/checklist";
@@ -161,7 +160,6 @@ export default function Home() {
   });
   
   const [showAddTask, setShowAddTask] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showDayOffs, setShowDayOffs] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -932,9 +930,6 @@ export default function Home() {
             >
               Export to Excel
             </Button>
-            <Button onClick={() => setShowSettings(true)} variant="outline" size="sm" className="h-10">
-              Settings
-            </Button>
             <ThemeToggle />
             {estimatedMonthHours !== null && (
               <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1638,7 +1633,6 @@ export default function Home() {
         />
       )}
 
-      {showSettings && <GeneralSettingsModal onClose={() => setShowSettings(false)} />}
 
       {showImport && (
         <ImportModal
