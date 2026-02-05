@@ -809,7 +809,7 @@ export default function Home() {
 
   if (initialLoading) {
     return (
-      <div className="mx-auto h-dvh">
+      <div className="h-full overflow-auto p-6">
         <Card>
           <CardHeader>
             <Skeleton className="h-9 w-64" />
@@ -828,8 +828,8 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto h-dvh">
-      <div className="p-6">
+    <div className="h-full flex flex-col">
+      <div className="p-6 shrink-0">
         <div className="flex gap-3 items-center justify-between flex-wrap">
           <div className="flex gap-3 items-center">
             <div className="flex bg-muted rounded-md p-1">
@@ -950,7 +950,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="overflow-hidden h-[calc(100vh-88px)]">
+      <div className="flex-1 overflow-hidden">
         <div className="overflow-auto h-full">
           <table className="w-full border-collapse">
             <thead>
