@@ -64,7 +64,6 @@ import { ImportModal, ExportToDevOpsModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ChecklistModal } from "@/features/checklist";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Bug, ListTodo, GripVertical, ListChecks, Clock3, Upload } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
@@ -930,7 +929,6 @@ export default function Home() {
             >
               Export to Excel
             </Button>
-            <ThemeToggle />
             {estimatedMonthHours !== null && (
               <div className="text-sm text-muted-foreground flex items-center gap-1">
                 <span>Est. month hours:</span>

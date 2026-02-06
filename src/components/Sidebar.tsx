@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Clock3, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
@@ -25,20 +26,15 @@ const NAV_ITEMS: NavItem[] = [
     icon: Clock3,
   },
   {
-    label: "Release Tracking",
-    href: "/release-tracking",
+    label: "Release Planner",
+    href: "/release-planner",
     icon: Rocket,
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
   },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [mode, setMode] = useState<SidebarMode>("normal");
+  const [mode, setMode] = useState<SidebarMode>("compact");
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -115,7 +111,23 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-2">
+      <div className="p-2 space-y-2">
+        <Button
+          asChild
+          variant="ghost"
+          className={cn(
+            "w-full justify-start gap-3 px-3",
+            "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            pathname === "/settings" && "bg-sidebar-accent text-sidebar-accent-foreground",
+            isCompact && "justify-center px-0"
+          )}
+        >
+          <Link href="/settings" title={isCompact ? "Settings" : undefined}>
+            <Settings className="h-4 w-4" />
+            <span className={cn("text-sm", isCompact && "sr-only")}>Settings</span>
+          </Link>
+        </Button>
+        <ThemeToggle isCompact={isCompact} align="start" />
         <Button
           variant="ghost"
           onClick={toggleMode}
