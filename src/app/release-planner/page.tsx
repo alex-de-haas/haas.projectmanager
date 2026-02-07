@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import type { Release, ReleaseWorkItem } from "@/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
@@ -42,16 +48,23 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ListTodo } from "lucide-react";
+import { GripVertical, ListTodo, MoreVertical } from "lucide-react";
 
 const ACTIVE_RELEASE_STORAGE_KEY = "projectManager.releasePlanner.activeReleaseId";
 
-interface SortableItemProps {
+interface SortableRowProps {
   id: number;
   children: React.ReactNode;
+  rowClassName: string;
+  dragHandleBgClassName: string;
 }
 
-function SortableItem({ id, children }: SortableItemProps) {
+function SortableRow({
+  id,
+  children,
+  rowClassName,
+  dragHandleBgClassName,
+}: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -68,22 +81,19 @@ function SortableItem({ id, children }: SortableItemProps) {
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex gap-3 group p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity flex items-center justify-center flex-shrink-0"
-        title="Drag to reorder"
-        style={{ width: "24px" }}
-      >
-        <GripVertical className="w-4 h-4 text-muted-foreground" />
-      </div>
+    <tr ref={setNodeRef} style={style} className={rowClassName}>
+      <td className={`py-2 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <GripVertical className="w-4 h-4 text-muted-foreground" />
+        </div>
+      </td>
       {children}
-    </div>
+    </tr>
   );
 }
 
@@ -107,6 +117,9 @@ export default function ReleaseTrackingPage() {
   const [newReleaseEnd, setNewReleaseEnd] = useState("");
   const [azureDevOpsOrganization, setAzureDevOpsOrganization] = useState("");
   const [azureDevOpsProject, setAzureDevOpsProject] = useState("");
+  const [moveWorkItemDialogOpen, setMoveWorkItemDialogOpen] = useState(false);
+  const [selectedWorkItemToMove, setSelectedWorkItemToMove] = useState<ReleaseWorkItem | null>(null);
+  const [selectedTargetReleaseId, setSelectedTargetReleaseId] = useState<string>("");
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -284,11 +297,7 @@ export default function ReleaseTrackingPage() {
   }, [activeReleaseId, loadWorkItemsForRelease]);
   const handleCreateRelease = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newReleaseName || !newReleaseStart || !newReleaseEnd) return;
-    if (newReleaseEnd < newReleaseStart) {
-      toast.error("End date must be after start date");
-      return;
-    }
+    if (!newReleaseName) return;
 
     setCreating(true);
     try {
@@ -297,8 +306,8 @@ export default function ReleaseTrackingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newReleaseName.trim(),
-          start_date: newReleaseStart,
-          end_date: newReleaseEnd,
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
         }),
       });
 
@@ -343,89 +352,125 @@ export default function ReleaseTrackingPage() {
     if (next) setActiveReleaseId(next.id);
   };
 
+  const handleMoveWorkItem = async () => {
+    if (!selectedWorkItemToMove || !selectedTargetReleaseId) return;
+
+    try {
+      const response = await fetch(`/api/releases/work-items/${selectedWorkItemToMove.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          release_id: Number(selectedTargetReleaseId),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to move work item");
+      }
+
+      toast.success("Work item moved successfully");
+      setMoveWorkItemDialogOpen(false);
+      setSelectedWorkItemToMove(null);
+      setSelectedTargetReleaseId("");
+
+      // Refresh work items for current release
+      if (activeReleaseId) {
+        loadWorkItemsForRelease(activeReleaseId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to move work item";
+      toast.error(message);
+    }
+  };
+
+  const handleRemoveWorkItem = async (workItemId: number) => {
+    try {
+      const response = await fetch(`/api/releases/work-items?id=${workItemId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to remove work item");
+      }
+
+      toast.success("Work item removed from release");
+
+      // Refresh work items for current release
+      if (activeReleaseId) {
+        loadWorkItemsForRelease(activeReleaseId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to remove work item";
+      toast.error(message);
+    }
+  };
+
+  const handleWorkItemClick = (workItem: ReleaseWorkItem) => {
+    if (workItem.external_source === "azure_devops" && workItem.external_id && azureDevOpsOrganization && azureDevOpsProject) {
+      const url = `https://dev.azure.com/${azureDevOpsOrganization}/${azureDevOpsProject}/_workitems/edit/${Math.floor(Number(workItem.external_id))}`;
+      window.open(url, "_blank");
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-6 shrink-0">
-        <div className="flex gap-3 items-center justify-between flex-wrap">
-          {loading ? (
-            <div className="text-sm text-muted-foreground">Loading releases...</div>
-          ) : sortedReleases.length === 0 ? (
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold">Release Planner</h1>
-              <p className="text-sm text-muted-foreground">
-                No releases yet. Create your first release to start planning.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex gap-3 items-center">
-                <Select
-                  value={activeRelease?.id ? String(activeRelease.id) : undefined}
-                  onValueChange={handleReleaseChange}
-                >
-                  <SelectTrigger className="w-[180px] h-10">
-                    <SelectValue placeholder="Select release" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sortedReleases.map((release) => (
-                      <SelectItem key={release.id} value={String(release.id)}>
-                        {release.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex gap-3 items-center">
-                <Button
-                  onClick={handlePrevRelease}
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  disabled={activeReleaseIndex <= 0}
-                >
-                  ←
-                </Button>
-                {activeRelease && (
-                  <div className="text-center">
-                    <h1 className="text-2xl font-semibold">
-                      {activeRelease.name}
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                      {format(parseISO(activeRelease.start_date), "dd MMM yyyy")} –{" "}
-                      {format(parseISO(activeRelease.end_date), "dd MMM yyyy")}
-                    </p>
-                  </div>
-                )}
-                <Button
-                  onClick={handleNextRelease}
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10"
-                  disabled={activeReleaseIndex >= sortedReleases.length - 1}
-                >
-                  →
-                </Button>
-              </div>
-            </>
-          )}
-
-          <div className="flex items-center gap-3">
-            <Button onClick={() => setShowCreate(true)} size="sm" className="h-10">
-              + New release
-            </Button>
-            {activeRelease && (
-              <Button
-                onClick={() => setShowImport(true)}
-                size="sm"
-                className="h-10"
-                variant="outline"
-              >
-                Import user stories
-              </Button>
-            )}
+        {loading ? (
+          <div className="text-sm text-muted-foreground">Loading releases...</div>
+        ) : sortedReleases.length === 0 ? (
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold">Release Planner</h1>
+            <p className="text-sm text-muted-foreground">
+              No releases yet. Create your first release to start planning.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="flex gap-3 items-center justify-center relative">
+            <div className="flex gap-3 items-center">
+              <Button
+                onClick={handlePrevRelease}
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
+                disabled={activeReleaseIndex <= 0}
+              >
+                ←
+              </Button>
+              {activeRelease && (
+                <div className="text-center min-w-[200px]">
+                  <h1 className="text-2xl font-semibold">
+                    {activeRelease.name}
+                  </h1>
+                </div>
+              )}
+              <Button
+                onClick={handleNextRelease}
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
+                disabled={activeReleaseIndex >= sortedReleases.length - 1}
+              >
+                →
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-3 absolute right-0">
+              <Button onClick={() => setShowCreate(true)} size="sm" className="h-10">
+                + New release
+              </Button>
+              {activeRelease && (
+                <Button
+                  onClick={() => setShowImport(true)}
+                  size="sm"
+                  className="h-10"
+                  variant="outline"
+                >
+                  Import user stories
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
@@ -450,80 +495,178 @@ export default function ReleaseTrackingPage() {
                     items={workItems.map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="space-y-3">
-                      {workItems.map((item) => {
-                        const getWorkItemUrl = () => {
-                          if (
-                            item.external_source === "azure_devops" &&
-                            item.external_id &&
-                            azureDevOpsOrganization &&
-                            azureDevOpsProject
-                          ) {
-                            return `https://dev.azure.com/${azureDevOpsOrganization}/${azureDevOpsProject}/_workitems/edit/${Math.floor(Number(item.external_id))}`;
-                          }
-                          return null;
-                        };
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-muted border-b border-border sticky top-0 z-10">
+                          <th className="p-3 sticky left-0 bg-muted z-10" style={{ width: "40px" }}>
+                            {/* Drag handle column */}
+                          </th>
+                          <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted z-10" style={{ minWidth: "240px" }}>
+                            Work item
+                          </th>
+                          <th className="p-3 text-left font-normal text-muted-foreground text-sm" style={{ width: "240px" }}>
+                            Tags
+                          </th>
+                          <th className="p-3 text-left font-normal text-muted-foreground text-sm" style={{ width: "160px" }}>
+                            Created
+                          </th>
+                          <th className="p-3 text-right font-normal text-muted-foreground text-sm" style={{ width: "80px" }}>
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workItems.map((item) => {
+                          const getWorkItemUrl = () => {
+                            if (
+                              item.external_source === "azure_devops" &&
+                              item.external_id &&
+                              azureDevOpsOrganization &&
+                              azureDevOpsProject
+                            ) {
+                              return `https://dev.azure.com/${azureDevOpsOrganization}/${azureDevOpsProject}/_workitems/edit/${Math.floor(Number(item.external_id))}`;
+                            }
+                            return null;
+                          };
 
-                        const workItemUrl = getWorkItemUrl();
+                          const workItemUrl = getWorkItemUrl();
+                          const itemState = item.state?.toLowerCase();
 
-                        return (
-                          <SortableItem key={item.id} id={item.id}>
-                            <div className="flex items-center justify-center flex-shrink-0 w-5 h-5">
-                              <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {item.external_id && (
-                                  <Badge variant="outline" className="text-xs font-mono font-semibold">
-                                    {workItemUrl ? (
-                                      <a
-                                        href={workItemUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                                      >
-                                        {Math.floor(Number(item.external_id))}
-                                      </a>
-                                    ) : (
-                                      Math.floor(Number(item.external_id))
-                                    )}
+                          const getRowClass = () => {
+                            if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
+                              return "group border-b border-border bg-green-50 hover:bg-green-100 dark:bg-green-950 dark:hover:bg-green-900";
+                            }
+                            if (itemState === "active") {
+                              return "group border-b border-border bg-blue-50 hover:bg-blue-100 dark:bg-blue-950 dark:hover:bg-blue-900";
+                            }
+                            return "group border-b border-border hover:bg-muted dark:hover:bg-muted";
+                          };
+
+                          const getStickyBgClass = () => {
+                            if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
+                              return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
+                            }
+                            if (itemState === "active") {
+                              return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                            }
+                            return "py-2 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
+                          };
+
+                          const getDragHandleBgClass = () => {
+                            if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
+                              return "sticky left-0 bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
+                            }
+                            if (itemState === "active") {
+                              return "sticky left-0 bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                            }
+                            return "sticky left-0 bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
+                          };
+
+                          return (
+                            <SortableRow
+                              key={item.id}
+                              id={item.id}
+                              rowClassName={getRowClass()}
+                              dragHandleBgClassName={getDragHandleBgClass()}
+                            >
+                              <td
+                                className={getStickyBgClass()}
+                                style={{ minWidth: "240px" }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="flex items-center justify-center flex-shrink-0 w-5 h-5">
+                                    <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                  </div>
+                                  {item.external_id && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs font-mono font-semibold"
+                                    >
+                                      {Math.floor(Number(item.external_id))}
+                                    </Badge>
+                                  )}
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-xs ${
+                                      itemState === "done" || itemState === "resolved" || itemState === "closed"
+                                        ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
+                                        : itemState === "active"
+                                        ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
+                                        : "bg-muted text-muted-foreground border-border"
+                                    }`}
+                                  >
+                                    {item.state || "New"}
                                   </Badge>
-                                )}
-                                <Badge
-                                  variant="outline"
-                                  className={`text-xs ${
-                                    item.state?.toLowerCase() === "done"
-                                      ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-                                      : item.state?.toLowerCase() === "active"
-                                      ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                      : "bg-muted text-muted-foreground border-border"
-                                  }`}
-                                >
-                                  {item.state || "New"}
-                                </Badge>
-                                <span className="text-sm font-medium text-foreground">
-                                  {item.title}
-                                </span>
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Created: {format(new Date(item.created_at), "dd MMM yyyy")}
-                              </div>
-                              {item.tags && (
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                  {item.tags.split(';').map((tag, idx) => (
-                                    tag.trim() && (
-                                      <Badge key={idx} variant="outline" className="text-xs">
-                                        {tag.trim()}
-                                      </Badge>
-                                    )
-                                  ))}
+                                  <div className="truncate text-sm font-medium min-w-0" title={item.title}>
+                                    {item.external_source === "azure_devops" && item.external_id ? (
+                                      <button
+                                        onClick={() => handleWorkItemClick(item)}
+                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
+                                        title={`${item.title} - Open in Azure DevOps`}
+                                      >
+                                        {item.title}
+                                      </button>
+                                    ) : (
+                                      <span className="text-foreground">{item.title}</span>
+                                    )}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </SortableItem>
-                        );
-                      })}
-                    </div>
+                              </td>
+                              <td className="py-2 px-3">
+                                {item.tags ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {item.tags.split(";").map((tag, idx) => (
+                                      tag.trim() && (
+                                        <Badge key={idx} variant="outline" className="text-xs">
+                                          {tag.trim()}
+                                        </Badge>
+                                      )
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 text-xs text-muted-foreground">
+                                {item.created_at
+                                  ? format(new Date(item.created_at), "dd MMM yyyy")
+                                  : "-"}
+                              </td>
+                              <td className="py-2 px-3 text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+                                      title="Actions"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedWorkItemToMove(item);
+                                        setMoveWorkItemDialogOpen(true);
+                                      }}
+                                    >
+                                      Move to release
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleRemoveWorkItem(item.id)}
+                                      className="text-red-600 dark:text-red-400"
+                                    >
+                                      Remove from release
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </SortableRow>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </SortableContext>
                 </DndContext>
               )}
@@ -550,11 +693,12 @@ export default function ReleaseTrackingPage() {
             <DialogHeader>
               <DialogTitle>Create release</DialogTitle>
               <DialogDescription>
-                Set a name and a date range for this release.
+                Set a name for this release.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateRelease} className="space-y-4">
-              <div className="space-y-2">        <Label htmlFor="release-name">Release name</Label>
+              <div className="space-y-2">
+                <Label htmlFor="release-name">Release name</Label>
                 <Input
                   id="release-name"
                   value={newReleaseName}
@@ -562,29 +706,6 @@ export default function ReleaseTrackingPage() {
                   placeholder="e.g., Q2 Launch"
                   required
                 />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="release-start">Start date</Label>
-                  <Input
-                    id="release-start"
-                    type="date"
-                    value={newReleaseStart}
-                    onChange={(event) => setNewReleaseStart(event.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="release-end">End date</Label>
-                  <Input
-                    id="release-end"
-                    type="date"
-                    value={newReleaseEnd}
-                    onChange={(event) => setNewReleaseEnd(event.target.value)}
-                    min={newReleaseStart}
-                    required
-                  />
-                </div>
               </div>
               <DialogFooter className="gap-2">
                 <Button
@@ -603,6 +724,62 @@ export default function ReleaseTrackingPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      {moveWorkItemDialogOpen && (
+        <Dialog open={moveWorkItemDialogOpen} onOpenChange={setMoveWorkItemDialogOpen}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Move work item</DialogTitle>
+              <DialogDescription>
+                Select the release to move this work item to.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Work item</Label>
+                <div className="text-sm font-medium">{selectedWorkItemToMove?.title}</div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="target-release">Target release</Label>
+                <Select value={selectedTargetReleaseId} onValueChange={setSelectedTargetReleaseId}>
+                  <SelectTrigger id="target-release">
+                    <SelectValue placeholder="Select a release" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sortedReleases
+                      .filter((release) => release.id !== activeReleaseId)
+                      .map((release) => (
+                        <SelectItem key={release.id} value={String(release.id)}>
+                          {release.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setMoveWorkItemDialogOpen(false);
+                  setSelectedWorkItemToMove(null);
+                  setSelectedTargetReleaseId("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleMoveWorkItem}
+                disabled={!selectedTargetReleaseId}
+              >
+                Move
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {showImport && activeRelease && (
         <ReleaseImportModal
           releaseId={activeRelease.id}
