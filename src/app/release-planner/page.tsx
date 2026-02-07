@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import ReleaseImportModal from "@/features/release-planner/components/ReleaseImportModal";
 import {
   Dialog,
@@ -49,6 +50,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ListTodo, MoreVertical } from "lucide-react";
+
+type ChildDiscipline = "backend" | "frontend" | "design";
 
 const ACTIVE_RELEASE_STORAGE_KEY = "projectManager.releasePlanner.activeReleaseId";
 
@@ -120,6 +123,24 @@ export default function ReleaseTrackingPage() {
   const [moveWorkItemDialogOpen, setMoveWorkItemDialogOpen] = useState(false);
   const [selectedWorkItemToMove, setSelectedWorkItemToMove] = useState<ReleaseWorkItem | null>(null);
   const [selectedTargetReleaseId, setSelectedTargetReleaseId] = useState<string>("");
+  const [showCreateChild, setShowCreateChild] = useState<{
+    workItemId: number;
+    workItemTitle: string;
+  } | null>(null);
+  const [childDisciplines, setChildDisciplines] = useState<Set<ChildDiscipline>>(
+    () => new Set()
+  );
+  const [childSubmitting, setChildSubmitting] = useState(false);
+
+  const childTaskOptions: Array<{
+    value: ChildDiscipline;
+    label: string;
+    prefix: string;
+  }> = [
+    { value: "backend", label: "Backend", prefix: "BE:" },
+    { value: "frontend", label: "Frontend", prefix: "FE:" },
+    { value: "design", label: "Design", prefix: "Design:" },
+  ];
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -412,6 +433,54 @@ export default function ReleaseTrackingPage() {
     }
   };
 
+  const handleCreateChildTask = useCallback(async () => {
+    if (!showCreateChild) return;
+
+    if (childDisciplines.size === 0) {
+      toast.error("Select at least one discipline for the child task");
+      return;
+    }
+
+    setChildSubmitting(true);
+    try {
+      const selectedOptions = childTaskOptions.filter((option) =>
+        childDisciplines.has(option.value)
+      );
+
+      if (selectedOptions.length === 0) {
+        throw new Error("Invalid disciplines selected");
+      }
+
+      const responses = await Promise.all(
+        selectedOptions.map((option) =>
+          fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: `${option.prefix} ${showCreateChild.workItemTitle}`,
+              type: "task",
+            }),
+          })
+        )
+      );
+
+      const failedResponse = responses.find((response) => !response.ok);
+      if (failedResponse) {
+        const errorData = await failedResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create child task");
+      }
+
+      toast.success("Child task created");
+      setShowCreateChild(null);
+      setChildDisciplines(new Set());
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Failed to create child task");
+    } finally {
+      setChildSubmitting(false);
+    }
+  }, [childDisciplines, childTaskOptions, showCreateChild]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-6 shrink-0">
@@ -654,6 +723,17 @@ export default function ReleaseTrackingPage() {
                                       Move to release
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
+                                      onClick={() => {
+                                        setChildDisciplines(new Set());
+                                        setShowCreateChild({
+                                          workItemId: item.id,
+                                          workItemTitle: item.title,
+                                        });
+                                      }}
+                                    >
+                                      Create child task
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
                                       onClick={() => handleRemoveWorkItem(item.id)}
                                       className="text-red-600 dark:text-red-400"
                                     >
@@ -724,6 +804,83 @@ export default function ReleaseTrackingPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog
+        open={!!showCreateChild}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowCreateChild(null);
+            setChildDisciplines(new Set());
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Create Child Task</DialogTitle>
+            <DialogDescription>
+              Choose one or more disciplines for the child task. The title will be prefixed accordingly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {childTaskOptions.map((option) => {
+              const isSelected = childDisciplines.has(option.value);
+              const checkboxId = `release-child-discipline-${option.value}`;
+              return (
+                <label
+                  key={option.value}
+                  htmlFor={checkboxId}
+                  className={
+                    "flex items-start gap-3 rounded-md border p-3 transition-colors cursor-pointer" +
+                    (isSelected ? " bg-muted/60" : " hover:bg-muted/30")
+                  }
+                >
+                  <Checkbox
+                    id={checkboxId}
+                    checked={isSelected}
+                    onCheckedChange={(checked) => {
+                      setChildDisciplines((prev) => {
+                        const next = new Set(prev);
+                        if (checked) {
+                          next.add(option.value);
+                        } else {
+                          next.delete(option.value);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">{option.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {option.prefix} {showCreateChild?.workItemTitle}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowCreateChild(null);
+                setChildDisciplines(new Set());
+              }}
+              disabled={childSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateChildTask}
+              disabled={childDisciplines.size === 0 || childSubmitting}
+            >
+              {childSubmitting ? "Creating..." : "Create Child Task"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {moveWorkItemDialogOpen && (
         <Dialog open={moveWorkItemDialogOpen} onOpenChange={setMoveWorkItemDialogOpen}>

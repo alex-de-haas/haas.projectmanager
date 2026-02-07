@@ -334,6 +334,8 @@ export default function Home() {
     }
   }, [visibleStatuses]);
 
+
+
   const dayOffMap = useMemo(
     () => new Map(dayOffs.map((dayOff) => [dayOff.date, dayOff] as const)),
     [dayOffs]
