@@ -56,6 +56,7 @@ export interface AzureDevOpsWorkItem {
   title: string;
   type: string;
   state: string;
+  tags?: string[];
 }
 
 export interface DayOff {
@@ -63,6 +64,27 @@ export interface DayOff {
   date: string; // YYYY-MM-DD format
   description?: string | null;
   is_half_day: number;
+  created_at: Date;
+}
+
+export interface Release {
+  id: number;
+  name: string;
+  start_date: string; // YYYY-MM-DD format
+  end_date: string; // YYYY-MM-DD format
+  created_at: Date;
+}
+
+export interface ReleaseWorkItem {
+  id: number;
+  release_id: number;
+  title: string;
+  external_id?: string | null;
+  external_source?: string | null;
+  work_item_type?: string | null;
+  state?: string | null;
+  tags?: string | null;
+  display_order: number;
   created_at: Date;
 }
 

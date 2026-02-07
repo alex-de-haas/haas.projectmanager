@@ -47,6 +47,28 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS releases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS release_work_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      release_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      external_id TEXT,
+      external_source TEXT,
+      work_item_type TEXT,
+      state TEXT,
+      tags TEXT,
+      display_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS blockers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id INTEGER NOT NULL,
@@ -76,6 +98,10 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_date ON time_entries(date);
     CREATE INDEX IF NOT EXISTS idx_task_date ON time_entries(task_id, date);
     CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date);
+    CREATE INDEX IF NOT EXISTS idx_release_start_date ON releases(start_date);
+    CREATE INDEX IF NOT EXISTS idx_release_end_date ON releases(end_date);
+    CREATE INDEX IF NOT EXISTS idx_release_work_items_release_id ON release_work_items(release_id);
+    CREATE INDEX IF NOT EXISTS idx_release_work_items_external_id ON release_work_items(external_id);
     CREATE INDEX IF NOT EXISTS idx_blocker_task_id ON blockers(task_id);
     CREATE INDEX IF NOT EXISTS idx_blocker_resolved ON blockers(is_resolved);
     CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
@@ -141,6 +167,46 @@ const initDb = () => {
       console.log('Adding is_half_day column to day_offs table...');
       db.exec('ALTER TABLE day_offs ADD COLUMN is_half_day INTEGER NOT NULL DEFAULT 0');
       console.log('is_half_day column added successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: Add display_order column to release_work_items table if it doesn't exist
+  try {
+    const releaseWorkItemsTableInfo = db.prepare("PRAGMA table_info(release_work_items)").all() as Array<{ name: string }>;
+    const hasDisplayOrderColumn = releaseWorkItemsTableInfo.some(col => col.name === 'display_order');
+    
+    if (!hasDisplayOrderColumn) {
+      console.log('Adding display_order column to release_work_items table...');
+      db.exec('ALTER TABLE release_work_items ADD COLUMN display_order INTEGER DEFAULT 0');
+      
+      // Set display_order for existing work items based on their current order per release
+      const releases = db.prepare('SELECT DISTINCT release_id FROM release_work_items').all() as Array<{ release_id: number }>;
+      const updateStmt = db.prepare('UPDATE release_work_items SET display_order = ? WHERE id = ?');
+      
+      for (const { release_id } of releases) {
+        const existingWorkItems = db.prepare('SELECT id FROM release_work_items WHERE release_id = ? ORDER BY created_at ASC').all(release_id) as Array<{ id: number }>;
+        existingWorkItems.forEach((item, index) => {
+          updateStmt.run(index, item.id);
+        });
+      }
+      
+      console.log('Display order column added to release_work_items and initialized successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: Add tags column to release_work_items table if it doesn't exist
+  try {
+    const releaseWorkItemsTableInfo = db.prepare("PRAGMA table_info(release_work_items)").all() as Array<{ name: string }>;
+    const hasTagsColumn = releaseWorkItemsTableInfo.some(col => col.name === 'tags');
+    
+    if (!hasTagsColumn) {
+      console.log('Adding tags column to release_work_items table...');
+      db.exec('ALTER TABLE release_work_items ADD COLUMN tags TEXT');
+      console.log('Tags column added to release_work_items successfully');
     }
   } catch (error) {
     console.error('Migration error:', error);
