@@ -52,6 +52,7 @@ const initDb = () => {
       name TEXT NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -100,6 +101,7 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date);
     CREATE INDEX IF NOT EXISTS idx_release_start_date ON releases(start_date);
     CREATE INDEX IF NOT EXISTS idx_release_end_date ON releases(end_date);
+    CREATE INDEX IF NOT EXISTS idx_release_status ON releases(status);
     CREATE INDEX IF NOT EXISTS idx_release_work_items_release_id ON release_work_items(release_id);
     CREATE INDEX IF NOT EXISTS idx_release_work_items_external_id ON release_work_items(external_id);
     CREATE INDEX IF NOT EXISTS idx_blocker_task_id ON blockers(task_id);
@@ -207,6 +209,20 @@ const initDb = () => {
       console.log('Adding tags column to release_work_items table...');
       db.exec('ALTER TABLE release_work_items ADD COLUMN tags TEXT');
       console.log('Tags column added to release_work_items successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: Add status column to releases table if it doesn't exist
+  try {
+    const releasesTableInfo = db.prepare("PRAGMA table_info(releases)").all() as Array<{ name: string }>;
+    const hasStatusColumn = releasesTableInfo.some(col => col.name === 'status');
+
+    if (!hasStatusColumn) {
+      console.log('Adding status column to releases table...');
+      db.exec("ALTER TABLE releases ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+      console.log('Status column added to releases successfully');
     }
   } catch (error) {
     console.error('Migration error:', error);

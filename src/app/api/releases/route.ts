@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      "INSERT INTO releases (name, start_date, end_date) VALUES (?, ?, ?)"
+      "INSERT INTO releases (name, start_date, end_date, status) VALUES (?, ?, ?, 'active')"
     );
     const result = stmt.run(name.trim(), start_date, end_date);
 
@@ -54,6 +54,57 @@ export async function POST(request: NextRequest) {
     console.error("Database error:", error);
     return NextResponse.json(
       { error: "Failed to create release" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, status } = body as {
+      id?: number;
+      status?: "active" | "completed";
+    };
+
+    if (id === undefined || id === null || !status) {
+      return NextResponse.json(
+        { error: "Release id and status are required" },
+        { status: 400 }
+      );
+    }
+
+    const releaseId = Number(id);
+    if (Number.isNaN(releaseId)) {
+      return NextResponse.json(
+        { error: "Release id must be a number" },
+        { status: 400 }
+      );
+    }
+
+    if (status !== "active" && status !== "completed") {
+      return NextResponse.json(
+        { error: "Invalid status" },
+        { status: 400 }
+      );
+    }
+
+    const stmt = db.prepare("UPDATE releases SET status = ? WHERE id = ?");
+    const result = stmt.run(status, releaseId);
+
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "Release not found" }, { status: 404 });
+    }
+
+    const release = db
+      .prepare("SELECT * FROM releases WHERE id = ?")
+      .get(releaseId) as Release;
+
+    return NextResponse.json(release);
+  } catch (error) {
+    console.error("Database error:", error);
+    return NextResponse.json(
+      { error: "Failed to update release" },
       { status: 500 }
     );
   }

@@ -72,6 +72,7 @@ export interface Release {
   name: string;
   start_date: string; // YYYY-MM-DD format
   end_date: string; // YYYY-MM-DD format
+  status: "active" | "completed";
   created_at: Date;
 }
 

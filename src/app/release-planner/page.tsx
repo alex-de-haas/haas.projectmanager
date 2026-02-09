@@ -49,9 +49,19 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ListTodo, MoreVertical } from "lucide-react";
+import { CheckCircle2, GripVertical, ListTodo, MoreVertical } from "lucide-react";
 
 type ChildDiscipline = "backend" | "frontend" | "design";
+
+const CHILD_TASK_OPTIONS: Array<{
+  value: ChildDiscipline;
+  label: string;
+  prefix: string;
+}> = [
+  { value: "backend", label: "Backend", prefix: "BE:" },
+  { value: "frontend", label: "Frontend", prefix: "FE:" },
+  { value: "design", label: "Design", prefix: "Design:" },
+];
 
 const ACTIVE_RELEASE_STORAGE_KEY = "projectManager.releasePlanner.activeReleaseId";
 
@@ -106,6 +116,7 @@ export default function ReleaseTrackingPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [workItems, setWorkItems] = useState<ReleaseWorkItem[]>([]);
   const [workItemsLoading, setWorkItemsLoading] = useState(false);
   const [activeReleaseId, setActiveReleaseId] = useState<number | null>(() => {
@@ -131,16 +142,6 @@ export default function ReleaseTrackingPage() {
     () => new Set()
   );
   const [childSubmitting, setChildSubmitting] = useState(false);
-
-  const childTaskOptions: Array<{
-    value: ChildDiscipline;
-    label: string;
-    prefix: string;
-  }> = [
-    { value: "backend", label: "Backend", prefix: "BE:" },
-    { value: "frontend", label: "Frontend", prefix: "FE:" },
-    { value: "design", label: "Design", prefix: "Design:" },
-  ];
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -169,6 +170,12 @@ export default function ReleaseTrackingPage() {
     if (activeReleaseIndex < 0) return null;
     return sortedReleases[activeReleaseIndex] ?? null;
   }, [sortedReleases, activeReleaseIndex]);
+
+  const moveTargetReleases = useMemo(() => {
+    return sortedReleases.filter(
+      (release) => release.id !== activeReleaseId && release.status !== "completed"
+    );
+  }, [sortedReleases, activeReleaseId]);
 
   const loadReleases = async () => {
     setLoading(true);
@@ -404,6 +411,33 @@ export default function ReleaseTrackingPage() {
     }
   };
 
+  const handleCompleteRelease = async () => {
+    if (!activeRelease) return;
+    if (activeRelease.status === "completed") return;
+
+    try {
+      const response = await fetch("/api/releases", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: activeRelease.id,
+          status: "completed",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to mark release as completed");
+      }
+
+      await loadReleases();
+      toast.success("Release marked as completed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to mark release as completed";
+      toast.error(message);
+    }
+  };
+
   const handleRemoveWorkItem = async (workItemId: number) => {
     try {
       const response = await fetch(`/api/releases/work-items?id=${workItemId}`, {
@@ -443,7 +477,7 @@ export default function ReleaseTrackingPage() {
 
     setChildSubmitting(true);
     try {
-      const selectedOptions = childTaskOptions.filter((option) =>
+      const selectedOptions = CHILD_TASK_OPTIONS.filter((option) =>
         childDisciplines.has(option.value)
       );
 
@@ -479,7 +513,40 @@ export default function ReleaseTrackingPage() {
     } finally {
       setChildSubmitting(false);
     }
-  }, [childDisciplines, childTaskOptions, showCreateChild]);
+  }, [childDisciplines, showCreateChild]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+
+    try {
+      const refreshResponse = await fetch("/api/azure-devops/refresh", {
+        method: "POST",
+      });
+
+      if (refreshResponse.ok) {
+        const result = await refreshResponse.json();
+
+        if (result.updated > 0) {
+          toast.success(`Successfully updated ${result.updated} task(s) from Azure DevOps`);
+        } else if (result.skipped > 0) {
+          toast.info(`All ${result.skipped} imported task(s) are up to date`);
+        }
+      } else if (refreshResponse.status === 400) {
+        console.log("Azure DevOps settings not configured, skipping refresh");
+      } else {
+        const errorData = await refreshResponse.json();
+        toast.error(errorData.error || "Failed to refresh Azure DevOps tasks");
+      }
+    } catch (err) {
+      console.error("Error refreshing Azure DevOps tasks:", err);
+      toast.error("An error occurred while refreshing tasks");
+    } finally {
+      if (activeReleaseId) {
+        await loadWorkItemsForRelease(activeReleaseId);
+      }
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -507,9 +574,14 @@ export default function ReleaseTrackingPage() {
               </Button>
               {activeRelease && (
                 <div className="text-center min-w-[200px]">
-                  <h1 className="text-2xl font-semibold">
-                    {activeRelease.name}
-                  </h1>
+                  <div className="flex items-center justify-center gap-2">
+                    <h1 className="text-2xl font-semibold">
+                      {activeRelease.name}
+                    </h1>
+                    {activeRelease.status === "completed" && (
+                      <Badge variant="secondary">Completed</Badge>
+                    )}
+                  </div>
                 </div>
               )}
               <Button
@@ -528,14 +600,36 @@ export default function ReleaseTrackingPage() {
                 + New release
               </Button>
               {activeRelease && (
-                <Button
-                  onClick={() => setShowImport(true)}
-                  size="sm"
-                  className="h-10"
-                  variant="outline"
-                >
-                  Import user stories
-                </Button>
+                <>
+                  <Button
+                    onClick={() => setShowImport(true)}
+                    size="sm"
+                    className="h-10"
+                    variant="outline"
+                  >
+                    Import user stories
+                  </Button>
+                  <Button
+                    onClick={handleRefresh}
+                    size="sm"
+                    className="h-10"
+                    variant="outline"
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? "Refreshing..." : "Refresh"}
+                  </Button>
+                  {activeRelease.status !== "completed" && (
+                    <Button
+                      onClick={handleCompleteRelease}
+                      size="sm"
+                      className="h-10"
+                      variant="outline"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Mark completed
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -715,8 +809,10 @@ export default function ReleaseTrackingPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-48">
                                     <DropdownMenuItem
+                                      disabled={moveTargetReleases.length === 0}
                                       onClick={() => {
                                         setSelectedWorkItemToMove(item);
+                                        setSelectedTargetReleaseId("");
                                         setMoveWorkItemDialogOpen(true);
                                       }}
                                     >
@@ -822,7 +918,7 @@ export default function ReleaseTrackingPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {childTaskOptions.map((option) => {
+            {CHILD_TASK_OPTIONS.map((option) => {
               const isSelected = childDisciplines.has(option.value);
               const checkboxId = `release-child-discipline-${option.value}`;
               return (
@@ -903,15 +999,18 @@ export default function ReleaseTrackingPage() {
                     <SelectValue placeholder="Select a release" />
                   </SelectTrigger>
                   <SelectContent>
-                    {sortedReleases
-                      .filter((release) => release.id !== activeReleaseId)
-                      .map((release) => (
+                    {moveTargetReleases.map((release) => (
                         <SelectItem key={release.id} value={String(release.id)}>
                           {release.name}
                         </SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
+                {moveTargetReleases.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No active target releases available.
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter className="gap-2">

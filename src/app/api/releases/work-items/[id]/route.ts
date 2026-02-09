@@ -47,12 +47,19 @@ export async function PATCH(
     // Check if the target release exists
     const release = db
       .prepare("SELECT * FROM releases WHERE id = ?")
-      .get(releaseId);
+      .get(releaseId) as { id: number; status?: string } | undefined;
 
     if (!release) {
       return NextResponse.json(
         { error: "Target release not found" },
         { status: 404 }
+      );
+    }
+
+    if (release.status === "completed") {
+      return NextResponse.json(
+        { error: "Cannot move work items to a completed release" },
+        { status: 400 }
       );
     }
 
