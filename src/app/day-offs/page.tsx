@@ -65,7 +65,7 @@ export default function DayOffsCalendarPage() {
       grouped.set(dayOff.date, current);
     }
 
-    for (const entries of grouped.values()) {
+    for (const entries of Array.from(grouped.values())) {
       entries.sort((a, b) => (a.user_name ?? "").localeCompare(b.user_name ?? ""));
     }
 
