@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, LMStudioSettings } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const key = searchParams.get('key');
 
     if (key) {
-      const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key) as Settings | undefined;
+      const setting = db
+        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+        .get(key, userId) as Settings | undefined;
       
       if (!setting) {
         return NextResponse.json({ error: 'Setting not found' }, { status: 404 });
@@ -38,7 +42,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Return all settings
-    const settings = db.prepare('SELECT * FROM settings ORDER BY key').all() as Settings[];
+    const settings = db
+      .prepare('SELECT * FROM settings WHERE user_id = ? ORDER BY key')
+      .all(userId) as Settings[];
     return NextResponse.json(settings);
   } catch (error) {
     console.error('Database error:', error);
@@ -51,6 +57,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { key, value } = body;
 
@@ -66,16 +73,18 @@ export async function POST(request: NextRequest) {
 
     // Upsert setting
     const stmt = db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET
+      INSERT INTO settings (user_id, key, value, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, key) DO UPDATE SET
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
     `);
 
-    stmt.run(key, stringValue);
+    stmt.run(userId, key, stringValue);
 
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key) as Settings;
+    const setting = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get(key, userId) as Settings;
 
     return NextResponse.json(setting);
   } catch (error) {
@@ -89,6 +98,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const key = searchParams.get('key');
 
@@ -99,8 +109,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare('DELETE FROM settings WHERE key = ?');
-    const result = stmt.run(key);
+    const stmt = db.prepare('DELETE FROM settings WHERE key = ? AND user_id = ?');
+    const result = stmt.run(key, userId);
 
     if (result.changes === 0) {
       return NextResponse.json({ error: 'Setting not found' }, { status: 404 });

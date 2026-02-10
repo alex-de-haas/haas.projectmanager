@@ -2,6 +2,7 @@ export type TaskType = 'task' | 'bug';
 
 export interface Task {
   id: number;
+  user_id?: number;
   title: string;
   type: TaskType;
   status?: string | null;
@@ -30,6 +31,7 @@ export interface TaskWithTimeEntries extends Task {
 
 export interface Settings {
   id: number;
+  user_id?: number;
   key: string;
   value: string;
   created_at: Date;
@@ -61,6 +63,7 @@ export interface AzureDevOpsWorkItem {
 
 export interface DayOff {
   id: number;
+  user_id?: number;
   date: string; // YYYY-MM-DD format
   description?: string | null;
   is_half_day: number;
@@ -69,15 +72,18 @@ export interface DayOff {
 
 export interface Release {
   id: number;
+  user_id?: number;
   name: string;
   start_date: string; // YYYY-MM-DD format
   end_date: string; // YYYY-MM-DD format
+  display_order?: number | null;
   status: "active" | "completed";
   created_at: Date;
 }
 
 export interface ReleaseWorkItem {
   id: number;
+  user_id?: number;
   release_id: number;
   title: string;
   external_id?: string | null;
@@ -93,6 +99,7 @@ export type BlockerSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 export interface Blocker {
   id: number;
+  user_id?: number;
   task_id: number;
   comment: string;
   severity: BlockerSeverity;
@@ -107,10 +114,17 @@ export interface TaskWithBlockers extends Task {
 
 export interface ChecklistItem {
   id: number;
+  user_id?: number;
   task_id: number;
   title: string;
   is_completed: number; // SQLite uses 0/1 for boolean
   display_order: number;
   created_at: Date;
   completed_at?: Date | null;
+}
+
+export interface User {
+  id: number;
+  name: string;
+  created_at: Date;
 }

@@ -4,9 +4,11 @@ import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import { JsonPatchDocument, JsonPatchOperation, Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { taskId, status } = body;
 
@@ -18,7 +20,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the task from database
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
+    const task = db
+      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+      .get(taskId, userId) as Task | undefined;
 
     if (!task) {
       return NextResponse.json(
@@ -35,10 +39,10 @@ export async function POST(request: NextRequest) {
       const checklistSummary = db.prepare(
         `SELECT 
           COUNT(*) as total,
-          SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
+         SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
          FROM checklist_items
-         WHERE task_id = ?`
-      ).get(taskId) as { total: number; completed: number | null } | undefined;
+         WHERE task_id = ? AND user_id = ?`
+      ).get(taskId, userId) as { total: number; completed: number | null } | undefined;
 
       if (checklistSummary && checklistSummary.total > 0) {
         const completedCount = checklistSummary.completed ?? 0;
@@ -56,20 +60,22 @@ export async function POST(request: NextRequest) {
     // Update local status and completed_at
     if (isCompleted && !wasCompleted) {
       // Task is being completed - set completed_at to now
-      db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, taskId);
+      db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(status, taskId, userId);
     } else if (!isCompleted && wasCompleted) {
       // Task is being reopened - clear completed_at
-      db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, taskId);
+      db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ? AND user_id = ?').run(status, taskId, userId);
     } else {
       // Status change doesn't affect completion - just update status
-      db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, taskId);
+      db.prepare('UPDATE tasks SET status = ? WHERE id = ? AND user_id = ?').run(status, taskId, userId);
     }
 
     // If task is linked to Azure DevOps, update it there too
     if (task.external_source === 'azure_devops' && task.external_id) {
       try {
         // Get Azure DevOps settings
-        const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+        const settingRow = db
+          .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+          .get('azure_devops', userId) as Settings | undefined;
         
         if (!settingRow) {
           return NextResponse.json({
@@ -131,8 +137,11 @@ export async function POST(request: NextRequest) {
         if (shouldUpdateCompletedWork) {
           // Calculate total hours from time entries
           const timeEntries = db.prepare(
-            'SELECT SUM(hours) as total FROM time_entries WHERE task_id = ?'
-          ).get(taskId) as { total: number | null } | undefined;
+            `SELECT SUM(te.hours) as total
+             FROM time_entries te
+             INNER JOIN tasks t ON t.id = te.task_id
+             WHERE te.task_id = ? AND t.user_id = ?`
+          ).get(taskId, userId) as { total: number | null } | undefined;
 
           const totalHours = timeEntries?.total || 0;
 

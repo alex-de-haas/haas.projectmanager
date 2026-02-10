@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { getRequestUserId } from '@/lib/user-context';
 
 export async function PATCH(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { taskOrders } = body;
 
@@ -14,11 +16,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Update display_order for each task in a transaction
-    const updateStmt = db.prepare('UPDATE tasks SET display_order = ? WHERE id = ?');
+    const updateStmt = db.prepare('UPDATE tasks SET display_order = ? WHERE id = ? AND user_id = ?');
     
     const transaction = db.transaction((orders: Array<{ id: number; order: number }>) => {
       for (const { id, order } of orders) {
-        updateStmt.run(order, id);
+        updateStmt.run(order, id, userId);
       }
     });
 

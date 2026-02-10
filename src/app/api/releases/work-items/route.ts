@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import type { ReleaseWorkItem } from "@/types";
+import { getRequestUserId } from "@/lib/user-context";
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const releaseIdParam = searchParams.get("releaseId");
 
@@ -24,9 +26,9 @@ export async function GET(request: NextRequest) {
 
     const items = db
       .prepare(
-        "SELECT * FROM release_work_items WHERE release_id = ? ORDER BY display_order ASC, created_at DESC"
+        "SELECT * FROM release_work_items WHERE release_id = ? AND user_id = ? ORDER BY display_order ASC, created_at DESC"
       )
-      .all(releaseId) as ReleaseWorkItem[];
+      .all(releaseId, userId) as ReleaseWorkItem[];
 
     return NextResponse.json(items);
   } catch (error) {
@@ -40,6 +42,7 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const idParam = searchParams.get("id");
 
@@ -58,8 +61,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare("DELETE FROM release_work_items WHERE id = ?");
-    const result = stmt.run(id);
+    const stmt = db.prepare("DELETE FROM release_work_items WHERE id = ? AND user_id = ?");
+    const result = stmt.run(id, userId);
 
     if (result.changes === 0) {
       return NextResponse.json(

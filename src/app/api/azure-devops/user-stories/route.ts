@@ -7,9 +7,11 @@ import type {
   AzureDevOpsSettings,
   AzureDevOpsWorkItem,
 } from "@/types";
+import { getRequestUserId } from "@/lib/user-context";
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const releaseIdParam = searchParams.get("releaseId");
     const releaseId = releaseIdParam ? Number(releaseIdParam) : null;
@@ -31,8 +33,8 @@ export async function GET(request: NextRequest) {
     }
 
     const settingRow = db
-      .prepare("SELECT * FROM settings WHERE key = ?")
-      .get("azure_devops") as Settings | undefined;
+      .prepare("SELECT * FROM settings WHERE key = ? AND user_id = ?")
+      .get("azure_devops", userId) as Settings | undefined;
 
     if (!settingRow) {
       return NextResponse.json(
@@ -142,11 +144,12 @@ export async function GET(request: NextRequest) {
           SELECT external_id
           FROM release_work_items
           WHERE release_id = ?
+            AND user_id = ?
             AND external_source = 'azure_devops'
             AND external_id IS NOT NULL
         `
         )
-        .all(releaseId) as Array<{ external_id: string | number | null }>;
+        .all(releaseId, userId) as Array<{ external_id: string | number | null }>;
 
       importedRows.forEach((row) => {
         const numericId = Number(row.external_id);

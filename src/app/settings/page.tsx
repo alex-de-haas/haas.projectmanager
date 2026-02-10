@@ -8,7 +8,7 @@ export default function SettingsPage() {
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold">Settings</h1>
           <p className="text-sm text-muted-foreground">
-            Manage general preferences, Azure DevOps integration, and AI options.
+            Manage users, releases, general preferences, Azure DevOps integration, and AI options.
           </p>
         </div>
         <Card className="max-w-3xl">

@@ -4,6 +4,7 @@ import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import { JsonPatchDocument, JsonPatchOperation, Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 interface ExportRequest {
   taskId: number;
@@ -12,6 +13,7 @@ interface ExportRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body: ExportRequest = await request.json();
     const { taskId, parentWorkItemId } = body;
 
@@ -23,7 +25,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the task from database
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
+    const task = db
+      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+      .get(taskId, userId) as Task | undefined;
 
     if (!task) {
       return NextResponse.json(
@@ -41,7 +45,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get Azure DevOps settings
-    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    const settingRow = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('azure_devops', userId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -144,8 +150,8 @@ export async function POST(request: NextRequest) {
     db.prepare(`
       UPDATE tasks 
       SET external_id = ?, external_source = 'azure_devops' 
-      WHERE id = ?
-    `).run(createdWorkItem.id.toString(), taskId);
+      WHERE id = ? AND user_id = ?
+    `).run(createdWorkItem.id.toString(), taskId, userId);
 
     return NextResponse.json({
       success: true,
@@ -163,10 +169,13 @@ export async function POST(request: NextRequest) {
 }
 
 // GET endpoint to fetch potential parent work items
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     // Get Azure DevOps settings
-    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    const settingRow = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('azure_devops', userId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(

@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import db from '@/lib/db';
 import type { Task, TimeEntry, Settings, AzureDevOpsSettings } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get('month'); // Format: YYYY-MM
 
@@ -22,7 +24,9 @@ export async function GET(request: NextRequest) {
     // Fetch Azure DevOps settings for building links
     let azureSettings: AzureDevOpsSettings | null = null;
     try {
-      const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+      const setting = db
+        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+        .get('azure_devops', userId) as Settings | undefined;
       if (setting) {
         azureSettings = JSON.parse(setting.value) as AzureDevOpsSettings;
       }
@@ -33,15 +37,19 @@ export async function GET(request: NextRequest) {
     // Fetch tasks that overlap with the selected period
     const tasks = db.prepare(`
       SELECT * FROM tasks 
-      WHERE DATE(created_at) <= ?
+      WHERE user_id = ?
+        AND DATE(created_at) <= ?
         AND (completed_at IS NULL OR DATE(completed_at) >= ?)
       ORDER BY COALESCE(display_order, 999999), created_at ASC
-    `).all(endDate, startDate) as Task[];
+    `).all(userId, endDate, startDate) as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
-      'SELECT * FROM time_entries WHERE date >= ? AND date <= ?'
-    ).all(startDate, endDate) as TimeEntry[];
+      `SELECT te.*
+       FROM time_entries te
+       INNER JOIN tasks t ON t.id = te.task_id
+       WHERE t.user_id = ? AND te.date >= ? AND te.date <= ?`
+    ).all(userId, startDate, endDate) as TimeEntry[];
 
     // Calculate total hours per task
     const taskHours = new Map<number, number>();

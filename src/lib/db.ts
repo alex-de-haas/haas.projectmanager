@@ -12,14 +12,22 @@ const db = new Database(dbPath);
 // Initialize database schema
 const initDb = () => {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
       title TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'task',
       status TEXT,
       external_id TEXT,
       external_source TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       CHECK(type IN ('task', 'bug'))
     );
 
@@ -35,31 +43,41 @@ const initDb = () => {
 
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      key TEXT NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL DEFAULT 1,
+      key TEXT NOT NULL,
       value TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, key)
     );
 
     CREATE TABLE IF NOT EXISTS day_offs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL DEFAULT 1,
+      date TEXT NOT NULL,
       description TEXT,
       is_half_day INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, date)
     );
 
     CREATE TABLE IF NOT EXISTS releases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
       name TEXT NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
+      display_order INTEGER DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS release_work_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
       release_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       external_id TEXT,
@@ -69,29 +87,34 @@ const initDb = () => {
       tags TEXT,
       display_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS blockers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
       task_id INTEGER NOT NULL,
       comment TEXT NOT NULL,
       severity TEXT NOT NULL DEFAULT 'medium',
       is_resolved INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       resolved_at DATETIME,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
       CHECK(severity IN ('low', 'medium', 'high', 'critical'))
     );
 
     CREATE TABLE IF NOT EXISTS checklist_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
       task_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       is_completed INTEGER DEFAULT 0,
       display_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
@@ -111,6 +134,109 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
     CREATE INDEX IF NOT EXISTS idx_checklist_order ON checklist_items(task_id, display_order);
   `);
+
+  try {
+    db.prepare("INSERT OR IGNORE INTO users (id, name) VALUES (1, 'Default User')").run();
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  const ensureUserColumn = (tableName: string) => {
+    const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    const hasUserIdColumn = tableInfo.some((col) => col.name === "user_id");
+    if (!hasUserIdColumn) {
+      console.log(`Adding user_id column to ${tableName} table...`);
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1`);
+      console.log(`user_id column added to ${tableName} successfully`);
+    }
+  };
+
+  try {
+    ensureUserColumn("tasks");
+    ensureUserColumn("releases");
+    ensureUserColumn("release_work_items");
+    ensureUserColumn("blockers");
+    ensureUserColumn("checklist_items");
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+      CREATE INDEX IF NOT EXISTS idx_settings_user_key ON settings(user_id, key);
+      CREATE INDEX IF NOT EXISTS idx_dayoffs_user_date ON day_offs(user_id, date);
+      CREATE INDEX IF NOT EXISTS idx_releases_user_id ON releases(user_id);
+      CREATE INDEX IF NOT EXISTS idx_release_work_items_user_id ON release_work_items(user_id);
+      CREATE INDEX IF NOT EXISTS idx_blockers_user_id ON blockers(user_id);
+      CREATE INDEX IF NOT EXISTS idx_checklist_user_id ON checklist_items(user_id);
+    `);
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  try {
+    const dayOffTableInfo = db.prepare("PRAGMA table_info(day_offs)").all() as Array<{ name: string }>;
+    const hasUserIdColumn = dayOffTableInfo.some((col) => col.name === "user_id");
+
+    if (!hasUserIdColumn) {
+      console.log("Migrating day_offs table for multi-user support...");
+      db.exec(`
+        CREATE TABLE day_offs_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 1,
+          date TEXT NOT NULL,
+          description TEXT,
+          is_half_day INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(user_id, date)
+        );
+      `);
+      db.exec(`
+        INSERT INTO day_offs_new (id, user_id, date, description, is_half_day, created_at)
+        SELECT id, 1, date, description, COALESCE(is_half_day, 0), created_at FROM day_offs;
+      `);
+      db.exec("DROP TABLE day_offs");
+      db.exec("ALTER TABLE day_offs_new RENAME TO day_offs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoffs_user_date ON day_offs(user_id, date)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date)");
+      console.log("day_offs table migrated successfully");
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  try {
+    const settingsTableInfo = db.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
+    const hasUserIdColumn = settingsTableInfo.some((col) => col.name === "user_id");
+
+    if (!hasUserIdColumn) {
+      console.log("Migrating settings table for multi-user support...");
+      db.exec(`
+        CREATE TABLE settings_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 1,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(user_id, key)
+        );
+      `);
+      db.exec(`
+        INSERT INTO settings_new (id, user_id, key, value, created_at, updated_at)
+        SELECT id, 1, key, value, created_at, updated_at FROM settings;
+      `);
+      db.exec("DROP TABLE settings");
+      db.exec("ALTER TABLE settings_new RENAME TO settings");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_settings_user_key ON settings(user_id, key)");
+      console.log("settings table migrated successfully");
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
 
   // Migration: Add status column if it doesn't exist
   try {
@@ -230,12 +356,39 @@ const initDb = () => {
     console.error('Migration error:', error);
   }
 
+  // Migration: Add display_order column to releases table if it doesn't exist
+  try {
+    const releasesTableInfo = db.prepare("PRAGMA table_info(releases)").all() as Array<{ name: string }>;
+    const hasDisplayOrderColumn = releasesTableInfo.some(col => col.name === 'display_order');
+
+    if (!hasDisplayOrderColumn) {
+      console.log('Adding display_order column to releases table...');
+      db.exec('ALTER TABLE releases ADD COLUMN display_order INTEGER DEFAULT 0');
+
+      const existingReleases = db
+        .prepare('SELECT id FROM releases ORDER BY start_date ASC, created_at ASC')
+        .all() as Array<{ id: number }>;
+      const updateStmt = db.prepare('UPDATE releases SET display_order = ? WHERE id = ?');
+      existingReleases.forEach((release, index) => {
+        updateStmt.run(index, release.id);
+      });
+
+      console.log('Display order column added to releases and initialized successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
   // Insert default settings if they don't exist
   try {
-    const defaultDayLengthSetting = db.prepare('SELECT * FROM settings WHERE key = ?').get('default_day_length');
+    const defaultDayLengthSetting = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('default_day_length', 1);
     if (!defaultDayLengthSetting) {
       console.log('Creating default_day_length setting...');
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('default_day_length', '8');
+      db
+        .prepare('INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)')
+        .run(1, 'default_day_length', '8');
       console.log('Default day length setting created (8 hours)');
     }
   } catch (error) {

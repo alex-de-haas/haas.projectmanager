@@ -6,7 +6,6 @@ import type { Release, ReleaseWorkItem } from "@/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,7 +48,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CheckCircle2, GripVertical, ListTodo, MoreVertical } from "lucide-react";
+import { GripVertical, ListTodo, MoreVertical } from "lucide-react";
 
 type ChildDiscipline = "backend" | "frontend" | "design";
 
@@ -113,8 +112,6 @@ function SortableRow({
 export default function ReleaseTrackingPage() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [workItems, setWorkItems] = useState<ReleaseWorkItem[]>([]);
@@ -126,9 +123,6 @@ export default function ReleaseTrackingPage() {
     const parsed = Number(stored);
     return Number.isNaN(parsed) ? null : parsed;
   });
-  const [newReleaseName, setNewReleaseName] = useState("");
-  const [newReleaseStart, setNewReleaseStart] = useState("");
-  const [newReleaseEnd, setNewReleaseEnd] = useState("");
   const [azureDevOpsOrganization, setAzureDevOpsOrganization] = useState("");
   const [azureDevOpsProject, setAzureDevOpsProject] = useState("");
   const [moveWorkItemDialogOpen, setMoveWorkItemDialogOpen] = useState(false);
@@ -152,8 +146,11 @@ export default function ReleaseTrackingPage() {
   );
 
   const sortedReleases = useMemo(() => {
-    return [...releases].sort((a, b) =>
-      a.start_date.localeCompare(b.start_date)
+    return [...releases].sort(
+      (a, b) =>
+        (a.display_order ?? Number.MAX_SAFE_INTEGER) -
+          (b.display_order ?? Number.MAX_SAFE_INTEGER) ||
+        a.start_date.localeCompare(b.start_date)
     );
   }, [releases]);
 
@@ -323,50 +320,6 @@ export default function ReleaseTrackingPage() {
       });
     }
   }, [activeReleaseId, loadWorkItemsForRelease]);
-  const handleCreateRelease = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!newReleaseName) return;
-
-    setCreating(true);
-    try {
-      const response = await fetch("/api/releases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newReleaseName.trim(),
-          start_date: new Date().toISOString().split('T')[0],
-          end_date: new Date().toISOString().split('T')[0],
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || "Failed to create release");
-      }
-
-      const created = (await response.json()) as Release;
-      await loadReleases();
-      setActiveReleaseId(created.id);
-      setNewReleaseName("");
-      setNewReleaseStart("");
-      setNewReleaseEnd("");
-      setShowCreate(false);
-      toast.success("Release created");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create release";
-      toast.error(message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleReleaseChange = (value: string) => {
-    const parsed = Number(value);
-    if (!Number.isNaN(parsed)) {
-      setActiveReleaseId(parsed);
-    }
-  };
-
   const handlePrevRelease = () => {
     if (activeReleaseIndex <= 0) return;
     const prev = sortedReleases[activeReleaseIndex - 1];
@@ -407,33 +360,6 @@ export default function ReleaseTrackingPage() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to move work item";
-      toast.error(message);
-    }
-  };
-
-  const handleCompleteRelease = async () => {
-    if (!activeRelease) return;
-    if (activeRelease.status === "completed") return;
-
-    try {
-      const response = await fetch("/api/releases", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: activeRelease.id,
-          status: "completed",
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || "Failed to mark release as completed");
-      }
-
-      await loadReleases();
-      toast.success("Release marked as completed");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to mark release as completed";
       toast.error(message);
     }
   };
@@ -557,7 +483,7 @@ export default function ReleaseTrackingPage() {
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold">Release Planner</h1>
             <p className="text-sm text-muted-foreground">
-              No releases yet. Create your first release to start planning.
+              No releases yet. Create one in Settings, Releases tab to start planning.
             </p>
           </div>
         ) : (
@@ -596,9 +522,6 @@ export default function ReleaseTrackingPage() {
             </div>
 
             <div className="flex items-center gap-3 absolute right-0">
-              <Button onClick={() => setShowCreate(true)} size="sm" className="h-10">
-                + New release
-              </Button>
               {activeRelease && (
                 <>
                   <Button
@@ -618,17 +541,6 @@ export default function ReleaseTrackingPage() {
                   >
                     {isRefreshing ? "Refreshing..." : "Refresh"}
                   </Button>
-                  {activeRelease.status !== "completed" && (
-                    <Button
-                      onClick={handleCompleteRelease}
-                      size="sm"
-                      className="h-10"
-                      variant="outline"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Mark completed
-                    </Button>
-                  )}
                 </>
               )}
             </div>
@@ -853,53 +765,12 @@ export default function ReleaseTrackingPage() {
           <div className="flex items-center justify-center h-full">
             <div className="text-center space-y-3">
               <p className="text-muted-foreground">
-                Create your first release to start planning.
+                Create your first release in Settings, Releases tab.
               </p>
-              <Button onClick={() => setShowCreate(true)} size="sm">
-                Create release
-              </Button>
             </div>
           </div>
         )}
       </div>
-
-      {showCreate && (
-        <Dialog open={showCreate} onOpenChange={setShowCreate}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Create release</DialogTitle>
-              <DialogDescription>
-                Set a name for this release.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreateRelease} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="release-name">Release name</Label>
-                <Input
-                  id="release-name"
-                  value={newReleaseName}
-                  onChange={(event) => setNewReleaseName(event.target.value)}
-                  placeholder="e.g., Q2 Launch"
-                  required
-                />
-              </div>
-              <DialogFooter className="gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setShowCreate(false)}
-                  disabled={creating}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={creating}>
-                  {creating ? "Creating..." : "Create release"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
 
       <Dialog
         open={!!showCreateChild}

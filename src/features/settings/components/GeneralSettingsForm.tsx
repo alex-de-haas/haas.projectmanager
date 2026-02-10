@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Release } from "@/types";
+import { CheckCircle2, GripVertical, Plus, Trash2, UserPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/UserAvatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -13,6 +17,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface GeneralSettingsFormProps {
   onCancel?: () => void;
@@ -26,6 +47,88 @@ interface DatabaseBackupFile {
   createdAt: string;
 }
 
+interface AppUser {
+  id: number;
+  name: string;
+}
+
+interface ApiError {
+  error?: string;
+}
+
+interface SortableReleaseRowProps {
+  id: number;
+  release: Release;
+  onRename: (release: Release) => void;
+  onMarkCompleted: (release: Release) => void;
+  updatingReleaseId: number | null;
+}
+
+const USER_STORAGE_KEY = "projectManager.activeUserId";
+const USER_COOKIE_NAME = "pm_user_id";
+
+function SortableReleaseRow({
+  id,
+  release,
+  onRename,
+  onMarkCompleted,
+  updatingReleaseId,
+}: SortableReleaseRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 rounded-md border p-2 bg-background"
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+        title="Drag to reorder"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{release.name}</div>
+      </div>
+      <Badge variant={release.status === "completed" ? "secondary" : "outline"}>
+        {release.status === "completed" ? "Completed" : "Active"}
+      </Badge>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => onRename(release)}
+        disabled={updatingReleaseId === release.id}
+      >
+        Rename
+      </Button>
+      {release.status !== "completed" && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onMarkCompleted(release)}
+          disabled={updatingReleaseId === release.id}
+        >
+          <CheckCircle2 className="h-4 w-4 mr-1" />
+          Mark completed
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function GeneralSettingsForm({
   onCancel,
   onSaved,
@@ -33,6 +136,17 @@ export function GeneralSettingsForm({
 }: GeneralSettingsFormProps) {
   // General settings
   const [defaultDayLength, setDefaultDayLength] = useState("8");
+  const [activeTab, setActiveTab] = useState("general");
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [activeUserId, setActiveUserId] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [updatingUser, setUpdatingUser] = useState(false);
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [loadingReleases, setLoadingReleases] = useState(true);
+  const [releaseName, setReleaseName] = useState("");
+  const [creatingRelease, setCreatingRelease] = useState(false);
+  const [updatingReleaseId, setUpdatingReleaseId] = useState<number | null>(null);
 
   // Azure DevOps settings
   const [organization, setOrganization] = useState("");
@@ -62,6 +176,22 @@ export function GeneralSettingsForm({
     "success"
   );
 
+  const releaseSensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const sortedReleases = useMemo(() => {
+    return [...releases].sort(
+      (a, b) =>
+        (a.display_order ?? Number.MAX_SAFE_INTEGER) -
+          (b.display_order ?? Number.MAX_SAFE_INTEGER) ||
+        a.start_date.localeCompare(b.start_date)
+    );
+  }, [releases]);
+
   const fetchModels = async (endpoint: string) => {
     setLoadingModels(true);
     try {
@@ -81,9 +211,65 @@ export function GeneralSettingsForm({
     }
   };
 
+  const setActiveUserContext = (userId: string) => {
+    setActiveUserId(userId);
+    window.localStorage.setItem(USER_STORAGE_KEY, userId);
+    document.cookie = `${USER_COOKIE_NAME}=${userId}; path=/; max-age=31536000; samesite=lax`;
+  };
+
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const response = await fetch("/api/users");
+      if (!response.ok) {
+        throw new Error("Failed to fetch users");
+      }
+
+      const data = (await response.json()) as AppUser[];
+      setUsers(data);
+
+      const storedUserId = window.localStorage.getItem(USER_STORAGE_KEY);
+      const firstUserId = data[0]?.id ? String(data[0].id) : "";
+      const nextUserId =
+        storedUserId && data.some((user) => String(user.id) === storedUserId)
+          ? storedUserId
+          : firstUserId;
+
+      if (nextUserId) {
+        setActiveUserContext(nextUserId);
+      } else {
+        setActiveUserId("");
+      }
+    } catch (err) {
+      setMessage("Failed to load users.");
+      setMessageType("error");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const loadReleases = async () => {
+    setLoadingReleases(true);
+    try {
+      const response = await fetch("/api/releases");
+      if (!response.ok) {
+        throw new Error("Failed to fetch releases");
+      }
+      const data = (await response.json()) as Release[];
+      setReleases(data);
+    } catch (err) {
+      setMessage("Failed to load releases.");
+      setMessageType("error");
+    } finally {
+      setLoadingReleases(false);
+    }
+  };
+
   useEffect(() => {
+    loadUsers();
     loadSettings();
     loadBackups();
+    loadReleases();
   }, []);
 
   const loadBackups = async () => {
@@ -111,6 +297,7 @@ export function GeneralSettingsForm({
   };
 
   const loadSettings = async () => {
+    setLoading(true);
     try {
       // Load general settings
       const generalResponse = await fetch(
@@ -159,6 +346,276 @@ export function GeneralSettingsForm({
       console.error("Failed to load settings:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSwitchUser = async (userId: string) => {
+    if (!userId || userId === activeUserId) return;
+    setActiveUserContext(userId);
+    await loadSettings();
+    await loadReleases();
+    setMessage("Active user updated.");
+    setMessageType("success");
+  };
+
+  const handleCreateUser = async () => {
+    const name = window.prompt("New user name");
+    if (!name) return;
+
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    setCreatingUser(true);
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        setMessage(data.error || "Failed to create user.");
+        setMessageType("error");
+        return;
+      }
+
+      const created = (await response.json()) as AppUser;
+      setUsers((prev) => [...prev, created]);
+      setActiveUserContext(String(created.id));
+      await loadSettings();
+      setMessage(`Created user "${created.name}" and switched to it.`);
+      setMessageType("success");
+    } catch (err) {
+      setMessage("Failed to create user.");
+      setMessageType("error");
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const handleRenameUser = async () => {
+    const selected = users.find((user) => String(user.id) === activeUserId);
+    if (!selected) return;
+
+    const name = window.prompt("Rename user", selected.name);
+    if (!name) return;
+
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === selected.name) return;
+
+    setUpdatingUser(true);
+    try {
+      const response = await fetch(`/api/users?id=${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        setMessage(data.error || "Failed to rename user.");
+        setMessageType("error");
+        return;
+      }
+
+      const updated = (await response.json()) as AppUser;
+      setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+      setMessage(`Renamed user to "${updated.name}".`);
+      setMessageType("success");
+    } catch (err) {
+      setMessage("Failed to rename user.");
+      setMessageType("error");
+    } finally {
+      setUpdatingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    const selected = users.find((user) => String(user.id) === activeUserId);
+    if (!selected || users.length <= 1) return;
+
+    const confirmed = window.confirm(
+      `Delete user "${selected.name}" and all associated data?`
+    );
+    if (!confirmed) return;
+
+    setUpdatingUser(true);
+    try {
+      const response = await fetch(`/api/users?id=${selected.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        setMessage(data.error || "Failed to delete user.");
+        setMessageType("error");
+        return;
+      }
+
+      const nextUsers = users.filter((user) => user.id !== selected.id);
+      setUsers(nextUsers);
+      const nextActiveId = String(nextUsers[0]?.id ?? "");
+      if (nextActiveId) {
+        setActiveUserContext(nextActiveId);
+        await loadSettings();
+      }
+      setMessage(`Removed user "${selected.name}".`);
+      setMessageType("success");
+    } catch (err) {
+      setMessage("Failed to delete user.");
+      setMessageType("error");
+    } finally {
+      setUpdatingUser(false);
+    }
+  };
+
+  const handleCreateRelease = async () => {
+    const trimmed = releaseName.trim();
+    if (!trimmed) {
+      setMessage("Release name is required.");
+      setMessageType("error");
+      return;
+    }
+
+    setCreatingRelease(true);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const response = await fetch("/api/releases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          start_date: today,
+          end_date: today,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(data.error || "Failed to create release.");
+      }
+
+      setReleaseName("");
+      await loadReleases();
+      setMessage(`Release "${trimmed}" created.`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to create release.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setCreatingRelease(false);
+    }
+  };
+
+  const handleRenameRelease = async (release: Release) => {
+    const nextName = window.prompt("Rename release", release.name);
+    if (!nextName) return;
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === release.name) return;
+
+    setUpdatingReleaseId(release.id);
+    try {
+      const response = await fetch("/api/releases", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: release.id, name: trimmed }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(data.error || "Failed to rename release.");
+      }
+
+      setReleases((prev) =>
+        prev.map((item) => (item.id === release.id ? { ...item, name: trimmed } : item))
+      );
+      setMessage(`Release renamed to "${trimmed}".`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to rename release.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setUpdatingReleaseId(null);
+    }
+  };
+
+  const handleMarkReleaseCompleted = async (release: Release) => {
+    if (release.status === "completed") return;
+
+    setUpdatingReleaseId(release.id);
+    try {
+      const response = await fetch("/api/releases", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: release.id, status: "completed" }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(data.error || "Failed to mark release as completed.");
+      }
+
+      setReleases((prev) =>
+        prev.map((item) =>
+          item.id === release.id ? { ...item, status: "completed" } : item
+        )
+      );
+      setMessage(`Release "${release.name}" marked as completed.`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "Failed to mark release as completed.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setUpdatingReleaseId(null);
+    }
+  };
+
+  const handleReleaseDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const current = [...sortedReleases];
+    const oldIndex = current.findIndex((release) => release.id === active.id);
+    const newIndex = current.findIndex((release) => release.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(current, oldIndex, newIndex).map(
+      (release, index) => ({
+        ...release,
+        display_order: index,
+      })
+    );
+    setReleases(reordered);
+
+    try {
+      const response = await fetch("/api/releases/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          releaseOrders: reordered.map((release, index) => ({
+            id: release.id,
+            order: index,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(data.error || "Failed to reorder releases.");
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to reorder releases.";
+      setMessage(errorMessage);
+      setMessageType("error");
+      await loadReleases();
     }
   };
 
@@ -434,13 +891,85 @@ export function GeneralSettingsForm({
     <div className="text-center py-8">Loading settings...</div>
   ) : (
     <form onSubmit={handleSave}>
-      <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="releases">Releases</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="database">Database</TabsTrigger>
           <TabsTrigger value="azure">Azure DevOps</TabsTrigger>
           <TabsTrigger value="ai">AI (LM Studio)</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="users" className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="activeUser">Active User</Label>
+            <Select
+              value={activeUserId}
+              onValueChange={handleSwitchUser}
+              disabled={loadingUsers || creatingUser || updatingUser}
+            >
+              <SelectTrigger id="activeUser">
+                <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select user"} />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={String(user.id)}>
+                    <div className="flex items-center gap-2">
+                      <UserAvatar name={user.name} className="h-5 w-5 text-[9px]" />
+                      <span>{user.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Select which user profile this app is currently using.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-md border p-2">
+            <UserAvatar
+              name={users.find((user) => String(user.id) === activeUserId)?.name}
+              className="h-8 w-8 text-xs"
+            />
+            <p className="text-sm font-medium">
+              {users.find((user) => String(user.id) === activeUserId)?.name || "No user selected"}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCreateUser}
+              disabled={creatingUser || updatingUser || loadingUsers}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              {creatingUser ? "Creating..." : "Add User"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRenameUser}
+              disabled={!activeUserId || creatingUser || updatingUser || loadingUsers}
+              className="gap-2"
+            >
+              <UserPen className="h-4 w-4" />
+              Rename User
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteUser}
+              disabled={!activeUserId || users.length <= 1 || creatingUser || updatingUser || loadingUsers}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove User
+            </Button>
+          </div>
+        </TabsContent>
 
         <TabsContent value="general" className="space-y-4 mt-4">
           <div className="space-y-2">
@@ -461,6 +990,60 @@ export function GeneralSettingsForm({
               calculations)
             </p>
           </div>
+        </TabsContent>
+
+        <TabsContent value="releases" className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="releaseName">Create Release</Label>
+            <div className="flex gap-2">
+              <Input
+                id="releaseName"
+                value={releaseName}
+                onChange={(event) => setReleaseName(event.target.value)}
+                placeholder="e.g., Q2 Launch"
+              />
+              <Button
+                type="button"
+                onClick={handleCreateRelease}
+                disabled={creatingRelease}
+              >
+                {creatingRelease ? "Creating..." : "Create release"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New releases default to today for start/end dates. Reorder releases by dragging rows.
+            </p>
+          </div>
+
+          {loadingReleases ? (
+            <div className="text-sm text-muted-foreground">Loading releases...</div>
+          ) : sortedReleases.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No releases yet.</div>
+          ) : (
+            <DndContext
+              sensors={releaseSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleReleaseDragEnd}
+            >
+              <SortableContext
+                items={sortedReleases.map((release) => release.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {sortedReleases.map((release) => (
+                    <SortableReleaseRow
+                      key={release.id}
+                      id={release.id}
+                      release={release}
+                      onRename={handleRenameRelease}
+                      onMarkCompleted={handleMarkReleaseCompleted}
+                      updatingReleaseId={updatingReleaseId}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
         </TabsContent>
 
         <TabsContent value="database" className="space-y-4 mt-4">

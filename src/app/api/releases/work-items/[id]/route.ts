@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
+import { getRequestUserId } from "@/lib/user-context";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = getRequestUserId(request);
     const id = Number(params.id);
     if (Number.isNaN(id)) {
       return NextResponse.json(
@@ -34,8 +36,8 @@ export async function PATCH(
 
     // Check if the work item exists
     const workItem = db
-      .prepare("SELECT * FROM release_work_items WHERE id = ?")
-      .get(id);
+      .prepare("SELECT * FROM release_work_items WHERE id = ? AND user_id = ?")
+      .get(id, userId);
 
     if (!workItem) {
       return NextResponse.json(
@@ -46,8 +48,8 @@ export async function PATCH(
 
     // Check if the target release exists
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ?")
-      .get(releaseId) as { id: number; status?: string } | undefined;
+      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ?")
+      .get(releaseId, userId) as { id: number; status?: string } | undefined;
 
     if (!release) {
       return NextResponse.json(
@@ -66,17 +68,17 @@ export async function PATCH(
     // Get the maximum display_order for the target release
     const maxOrderResult = db
       .prepare(
-        "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ?"
+        "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND user_id = ?"
       )
-      .get(releaseId) as { max_order: number | null };
+      .get(releaseId, userId) as { max_order: number | null };
 
     const nextOrder = (maxOrderResult.max_order ?? -1) + 1;
 
     // Update the work item with the new release_id and display_order
     const stmt = db.prepare(
-      "UPDATE release_work_items SET release_id = ?, display_order = ? WHERE id = ?"
+      "UPDATE release_work_items SET release_id = ?, display_order = ? WHERE id = ? AND user_id = ?"
     );
-    const result = stmt.run(releaseId, nextOrder, id);
+    const result = stmt.run(releaseId, nextOrder, id, userId);
 
     if (result.changes === 0) {
       return NextResponse.json(

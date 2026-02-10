@@ -6,10 +6,13 @@ import { usePathname } from "next/navigation";
 import { Clock3, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/UserAvatar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
+const USER_STORAGE_KEY = "projectManager.activeUserId";
+const USER_COOKIE_NAME = "pm_user_id";
 
 type SidebarMode = "compact" | "normal";
 
@@ -17,6 +20,11 @@ interface NavItem {
   label: string;
   href: string;
   icon: typeof Clock3;
+}
+
+interface AppUser {
+  id: number;
+  name: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -35,6 +43,8 @@ const NAV_ITEMS: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [mode, setMode] = useState<SidebarMode>("compact");
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [activeUserId, setActiveUserId] = useState<string>("");
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -46,6 +56,35 @@ export default function Sidebar() {
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, mode);
   }, [mode]);
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const response = await fetch("/api/users");
+        if (!response.ok) return;
+
+        const data = (await response.json()) as AppUser[];
+        setUsers(data);
+
+        const storedUserId = window.localStorage.getItem(USER_STORAGE_KEY);
+        const firstUserId = data[0]?.id ? String(data[0].id) : "";
+        const nextUserId =
+          storedUserId && data.some((user) => String(user.id) === storedUserId)
+            ? storedUserId
+            : firstUserId;
+
+        if (nextUserId) {
+          setActiveUserId(nextUserId);
+          window.localStorage.setItem(USER_STORAGE_KEY, nextUserId);
+          document.cookie = `${USER_COOKIE_NAME}=${nextUserId}; path=/; max-age=31536000; samesite=lax`;
+        }
+      } catch (error) {
+        console.error("Failed to load users:", error);
+      }
+    };
+
+    loadUsers();
+  }, []);
 
   const isCompact = mode === "compact";
 
@@ -61,6 +100,8 @@ export default function Sidebar() {
   const toggleMode = () => {
     setMode((prev) => (prev === "compact" ? "normal" : "compact"));
   };
+
+  const currentUser = users.find((user) => String(user.id) === activeUserId);
 
   return (
     <aside
@@ -112,6 +153,20 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-2 space-y-2">
+        <div className="space-y-2 px-1">
+          {isCompact ? (
+            <div className="flex justify-center">
+              <UserAvatar name={currentUser?.name} className="h-8 w-8 text-[11px]" />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2">
+              <UserAvatar name={currentUser?.name} className="h-7 w-7 text-[10px]" />
+              <p className="text-sm font-medium truncate">
+                {currentUser?.name || "No user selected"}
+              </p>
+            </div>
+          )}
+        </div>
         <Button
           asChild
           variant="ghost"

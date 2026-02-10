@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { getRequestUserId } from '@/lib/user-context';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { task_id, date, hours } = body;
 
@@ -25,10 +27,19 @@ export async function POST(request: NextRequest) {
     if (hoursValue === 0) {
       // Delete the entry if hours is 0
       db.prepare(
-        'DELETE FROM time_entries WHERE task_id = ? AND date = ?'
-      ).run(task_id, date);
+        `DELETE FROM time_entries 
+         WHERE task_id = ? AND date = ?
+           AND task_id IN (SELECT id FROM tasks WHERE id = ? AND user_id = ?)`
+      ).run(task_id, date, task_id, userId);
     } else {
       // Insert or update the time entry
+      const task = db
+        .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?')
+        .get(task_id, userId) as { id: number } | undefined;
+      if (!task) {
+        return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+      }
+
       db.prepare(
         `INSERT INTO time_entries (task_id, date, hours) 
          VALUES (?, ?, ?) 
@@ -51,6 +62,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const taskId = searchParams.get('taskId');
 
@@ -62,8 +74,12 @@ export async function GET(request: NextRequest) {
     }
 
     const entries = db.prepare(
-      'SELECT date, hours FROM time_entries WHERE task_id = ? ORDER BY date DESC'
-    ).all(taskId);
+      `SELECT te.date, te.hours
+       FROM time_entries te
+       INNER JOIN tasks t ON t.id = te.task_id
+       WHERE te.task_id = ? AND t.user_id = ?
+       ORDER BY te.date DESC`
+    ).all(taskId, userId);
 
     return NextResponse.json(entries);
   } catch (error) {

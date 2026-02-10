@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { DayOff } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 // GET - Fetch all day-offs or filter by date range
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    let query = 'SELECT * FROM day_offs';
-    const params: string[] = [];
+    let query = 'SELECT * FROM day_offs WHERE user_id = ?';
+    const params: Array<string | number> = [userId];
 
     if (startDate && endDate) {
-      query += ' WHERE date BETWEEN ? AND ?';
+      query += ' AND date BETWEEN ? AND ?';
       params.push(startDate, endDate);
     }
 
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
 // POST - Create a new day-off
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { date, description, isHalfDay = false } = body;
 
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if day-off already exists for this date
-    const existing = db.prepare('SELECT id FROM day_offs WHERE date = ?').get(date);
+    const existing = db.prepare('SELECT id FROM day_offs WHERE date = ? AND user_id = ?').get(date, userId);
     if (existing) {
       return NextResponse.json(
         { error: 'Day-off already exists for this date' },
@@ -55,13 +58,13 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      'INSERT INTO day_offs (date, description, is_half_day) VALUES (?, ?, ?)'
+      'INSERT INTO day_offs (user_id, date, description, is_half_day) VALUES (?, ?, ?, ?)'
     );
-    const result = stmt.run(date, description || null, isHalfDay ? 1 : 0);
+    const result = stmt.run(userId, date, description || null, isHalfDay ? 1 : 0);
 
     const newDayOff = db
-      .prepare('SELECT * FROM day_offs WHERE id = ?')
-      .get(result.lastInsertRowid) as DayOff;
+      .prepare('SELECT * FROM day_offs WHERE id = ? AND user_id = ?')
+      .get(result.lastInsertRowid, userId) as DayOff;
 
     return NextResponse.json(newDayOff, { status: 201 });
   } catch (error) {
@@ -76,6 +79,7 @@ export async function POST(request: NextRequest) {
 // DELETE - Delete a day-off
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
     const date = searchParams.get('date');
@@ -91,11 +95,11 @@ export async function DELETE(request: NextRequest) {
     let result;
 
     if (id) {
-      stmt = db.prepare('DELETE FROM day_offs WHERE id = ?');
-      result = stmt.run(parseInt(id));
+      stmt = db.prepare('DELETE FROM day_offs WHERE id = ? AND user_id = ?');
+      result = stmt.run(parseInt(id), userId);
     } else {
-      stmt = db.prepare('DELETE FROM day_offs WHERE date = ?');
-      result = stmt.run(date);
+      stmt = db.prepare('DELETE FROM day_offs WHERE date = ? AND user_id = ?');
+      result = stmt.run(date, userId);
     }
 
     if (result.changes === 0) {

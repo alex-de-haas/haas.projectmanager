@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Task, TimeEntry, TaskWithTimeEntries, Blocker } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 interface ChecklistSummary {
   task_id: number;
@@ -10,6 +11,7 @@ interface ChecklistSummary {
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get('month'); // Format: YYYY-MM
     const startDateParam = searchParams.get('startDate'); // Format: YYYY-MM-DD
@@ -36,20 +38,24 @@ export async function GET(request: NextRequest) {
     // - It was either not completed yet OR completed during or after the period start
     const tasks = db.prepare(`
       SELECT * FROM tasks 
-      WHERE DATE(created_at) <= ?
+      WHERE user_id = ?
+        AND DATE(created_at) <= ?
         AND (completed_at IS NULL OR DATE(completed_at) >= ?)
       ORDER BY COALESCE(display_order, 999999), created_at ASC
-    `).all(endDate, startDate) as Task[];
+    `).all(userId, endDate, startDate) as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
-      'SELECT * FROM time_entries WHERE date >= ? AND date <= ?'
-    ).all(startDate, endDate) as TimeEntry[];
+      `SELECT te.*
+       FROM time_entries te
+       INNER JOIN tasks t ON t.id = te.task_id
+       WHERE t.user_id = ? AND te.date >= ? AND te.date <= ?`
+    ).all(userId, startDate, endDate) as TimeEntry[];
 
     // Fetch all active blockers
     const blockers = db.prepare(
-      'SELECT * FROM blockers WHERE is_resolved = 0 ORDER BY task_id, created_at DESC'
-    ).all() as Blocker[];
+      'SELECT * FROM blockers WHERE user_id = ? AND is_resolved = 0 ORDER BY task_id, created_at DESC'
+    ).all(userId) as Blocker[];
 
     // Fetch checklist summary for all tasks
     const checklistSummaries = db.prepare(`
@@ -58,8 +64,9 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total,
         SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
       FROM checklist_items
+      WHERE user_id = ?
       GROUP BY task_id
-    `).all() as ChecklistSummary[];
+    `).all(userId) as ChecklistSummary[];
 
     // Create a map of task_id to checklist summary
     const checklistMap = new Map<number, { total: number; completed: number }>();
@@ -103,6 +110,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { title, type } = body;
 
@@ -121,12 +129,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the current max display_order and add 1 for the new task
-    const maxOrder = db.prepare('SELECT MAX(display_order) as max_order FROM tasks').get() as { max_order: number | null };
+    const maxOrder = db
+      .prepare('SELECT MAX(display_order) as max_order FROM tasks WHERE user_id = ?')
+      .get(userId) as { max_order: number | null };
     const newOrder = (maxOrder.max_order ?? -1) + 1;
 
     const result = db.prepare(
-      'INSERT INTO tasks (title, type, display_order) VALUES (?, ?, ?)'
-    ).run(title, type, newOrder);
+      'INSERT INTO tasks (user_id, title, type, display_order) VALUES (?, ?, ?, ?)'
+    ).run(userId, title, type, newOrder);
 
     return NextResponse.json(
       { message: 'Task created successfully', id: result.lastInsertRowid },
@@ -143,6 +153,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { id, status, title, type } = body;
 
@@ -165,8 +176,8 @@ export async function PATCH(request: NextRequest) {
             COUNT(*) as total,
             SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
            FROM checklist_items
-           WHERE task_id = ?`
-        ).get(id) as { total: number; completed: number | null } | undefined;
+           WHERE task_id = ? AND user_id = ?`
+        ).get(id, userId) as { total: number; completed: number | null } | undefined;
 
         if (checklistSummary && checklistSummary.total > 0) {
           const completedCount = checklistSummary.completed ?? 0;
@@ -180,7 +191,9 @@ export async function PATCH(request: NextRequest) {
       }
       
       // Get current task to check if status changed
-      const currentTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(id) as { status?: string | null } | undefined;
+      const currentTask = db
+        .prepare('SELECT status FROM tasks WHERE id = ? AND user_id = ?')
+        .get(id, userId) as { status?: string | null } | undefined;
       
       if (!currentTask) {
         return NextResponse.json(
@@ -195,13 +208,13 @@ export async function PATCH(request: NextRequest) {
       let result;
       if (isCompleted && !wasCompleted) {
         // Task is being completed - set completed_at to now
-        result = db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+        result = db.prepare('UPDATE tasks SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?').run(status, id, userId);
       } else if (!isCompleted && wasCompleted) {
         // Task is being reopened - clear completed_at
-        result = db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run(status, id);
+        result = db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ? AND user_id = ?').run(status, id, userId);
       } else {
         // Status change doesn't affect completion - just update status
-        result = db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run(status, id);
+        result = db.prepare('UPDATE tasks SET status = ? WHERE id = ? AND user_id = ?').run(status, id, userId);
       }
 
       if (result.changes === 0) {
@@ -239,9 +252,10 @@ export async function PATCH(request: NextRequest) {
       }
 
       values.push(id);
+      values.push(userId);
 
       const result = db.prepare(
-        `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`
+        `UPDATE tasks SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`
       ).run(...values);
 
       if (result.changes === 0) {
@@ -272,6 +286,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const searchParams = request.nextUrl.searchParams;
     const taskId = searchParams.get('id');
 
@@ -283,10 +298,14 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete associated time entries first (cascade delete)
-    db.prepare('DELETE FROM time_entries WHERE task_id = ?').run(taskId);
+    db.prepare(`
+      DELETE FROM time_entries
+      WHERE task_id = ?
+        AND task_id IN (SELECT id FROM tasks WHERE id = ? AND user_id = ?)
+    `).run(taskId, taskId, userId);
     
     // Delete the task
-    const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+    const result = db.prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?').run(taskId, userId);
 
     if (result.changes === 0) {
       return NextResponse.json(

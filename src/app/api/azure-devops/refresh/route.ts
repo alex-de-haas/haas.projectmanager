@@ -3,11 +3,15 @@ import * as azdev from 'azure-devops-node-api';
 import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     // Get Azure DevOps settings
-    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    const settingRow = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('azure_devops', userId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -35,8 +39,8 @@ export async function POST(request: NextRequest) {
 
     // Get all tasks imported from Azure DevOps
     const importedTasks = db.prepare(
-      'SELECT * FROM tasks WHERE external_source = ? AND external_id IS NOT NULL'
-    ).all('azure_devops') as Task[];
+      'SELECT * FROM tasks WHERE external_source = ? AND user_id = ? AND external_id IS NOT NULL'
+    ).all('azure_devops', userId) as Task[];
 
     if (importedTasks.length === 0) {
       return NextResponse.json({ 
@@ -67,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     const MAX_BATCH_SIZE = 200;
-    const workItems: azdev.WorkItem[] = [];
+    const workItems: any[] = [];
 
     for (let i = 0; i < workItemIds.length; i += MAX_BATCH_SIZE) {
       const batchIds = workItemIds.slice(i, i + MAX_BATCH_SIZE);

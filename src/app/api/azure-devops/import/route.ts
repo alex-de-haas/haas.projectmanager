@@ -3,6 +3,7 @@ import * as azdev from 'azure-devops-node-api';
 import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 interface ImportRequest {
   workItemIds?: number[];
@@ -12,10 +13,13 @@ interface ImportRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body: ImportRequest = await request.json();
 
     // Get Azure DevOps settings
-    const settingRow = db.prepare('SELECT * FROM settings WHERE key = ?').get('azure_devops') as Settings | undefined;
+    const settingRow = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('azure_devops', userId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -116,7 +120,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if already imported
-      const existing = db.prepare('SELECT id FROM tasks WHERE external_id = ?').get(workItem.id);
+      const existing = db
+        .prepare('SELECT id FROM tasks WHERE external_id = ? AND user_id = ?')
+        .get(workItem.id, userId);
       
       if (existing) {
         skipped.push({ id: workItem.id, reason: 'Already imported' });
@@ -124,18 +130,22 @@ export async function POST(request: NextRequest) {
       }
 
       // Get the current max display_order and add 1 for the new task
-      const maxOrder = db.prepare('SELECT MAX(display_order) as max_order FROM tasks').get() as { max_order: number | null };
+      const maxOrder = db
+        .prepare('SELECT MAX(display_order) as max_order FROM tasks WHERE user_id = ?')
+        .get(userId) as { max_order: number | null };
       const newOrder = (maxOrder.max_order ?? -1) + 1;
 
       // Insert task
       const stmt = db.prepare(`
-        INSERT INTO tasks (title, type, status, external_id, external_source, display_order, completed_at)
-        VALUES (?, ?, ?, ?, 'azure_devops', ?, ?)
+        INSERT INTO tasks (user_id, title, type, status, external_id, external_source, display_order, completed_at)
+        VALUES (?, ?, ?, ?, ?, 'azure_devops', ?, ?)
       `);
 
-      const result = stmt.run(title, taskType, status, workItem.id, newOrder, closedDate);
+      const result = stmt.run(userId, title, taskType, status, workItem.id, newOrder, closedDate);
       
-      const newTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid) as Task;
+      const newTask = db
+        .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
+        .get(result.lastInsertRowid, userId) as Task;
       imported.push(newTask);
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Settings } from '@/types';
+import { getRequestUserId } from '@/lib/user-context';
 
 interface LMStudioSettings {
   endpoint: string;
@@ -17,9 +18,11 @@ interface LMStudioModelsResponse {
   data: LMStudioModel[];
 }
 
-async function getLMStudioSettings(): Promise<LMStudioSettings | null> {
+async function getLMStudioSettings(userId: number): Promise<LMStudioSettings | null> {
   try {
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get('lm_studio') as Settings | undefined;
+    const setting = db
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
+      .get('lm_studio', userId) as Settings | undefined;
     if (!setting) return null;
     return JSON.parse(setting.value) as LMStudioSettings;
   } catch {
@@ -29,11 +32,12 @@ async function getLMStudioSettings(): Promise<LMStudioSettings | null> {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getRequestUserId(request);
     const body = await request.json();
     const { endpoint } = body;
 
     // Use provided endpoint or get from settings
-    const targetEndpoint = endpoint || (await getLMStudioSettings())?.endpoint;
+    const targetEndpoint = endpoint || (await getLMStudioSettings(userId))?.endpoint;
 
     if (!targetEndpoint) {
       return NextResponse.json(
