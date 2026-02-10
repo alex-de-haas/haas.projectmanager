@@ -39,7 +39,7 @@ That's it! The SQLite database will be automatically created with sample data on
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-The database file (`time_tracker.db`) will be created in the project root directory.
+The database file (`data/time_tracker.db`) will be created automatically on first run.
 
 ## Usage
 
@@ -100,7 +100,7 @@ For detailed Azure DevOps integration setup, see [AZURE_DEVOPS_INTEGRATION.md](.
 ### Database Features
 - ✅ **Auto-initialization**: Database creates itself on first run
 - ✅ **Sample data included**: Pre-loaded with example tasks and time entries
-- ✅ **Single file**: All data stored in `time_tracker.db`
+- ✅ **Single file**: All data stored in `data/time_tracker.db`
 - ✅ **Portable**: Just copy the .db file to backup or move your data
 
 ## Tech Stack
@@ -162,7 +162,7 @@ npm run lint
 
 ## 📦 Database File Location
 
-Your data is stored in: `/Users/haas/Sources/Haas.ProjectManager/time_tracker.db`
+Your data is stored in: `/Users/haas/Sources/Haas.ProjectManager/data/time_tracker.db`
 
 You can:
 - View it with [DB Browser for SQLite](https://sqlitebrowser.org/)
@@ -173,8 +173,8 @@ You can:
 ## 🔍 Troubleshooting
 
 ### Database errors
-- The database file (`time_tracker.db`) will be created automatically
-- If you see errors, try deleting `time_tracker.db` and restarting the server
+- The database file (`data/time_tracker.db`) will be created automatically
+- If you see errors, try deleting `data/time_tracker.db` and restarting the server
 - Check that you have write permissions in the project directory
 
 ### "Module not found" errors
@@ -188,11 +188,11 @@ You can:
 
 ### Database backup and restore
 - **In app (recommended)**: Open Settings -> General -> Database Backups
-- **Create backup**: Creates timestamped `.db` files in `db_backups/`
+- **Create backup**: Creates timestamped `.db` files in `data/backups/`
 - **Restore backup**: Select a backup file and restore data from it
 - **API list/create backups**: `GET/POST /api/database/backups`
 - **API restore backup**: `POST /api/database/restore`
-- **Reset**: Delete `time_tracker.db` and restart the server for fresh sample data
+- **Reset**: Delete `data/time_tracker.db` and restart the server for fresh sample data
 
 ## License
 

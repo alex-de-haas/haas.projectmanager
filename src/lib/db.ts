@@ -2,9 +2,47 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const dbPath = path.join(process.cwd(), 'time_tracker.db');
-const backupDirPath = path.join(process.cwd(), 'db_backups');
+const dataDirPath = path.join(process.cwd(), 'data');
+const dbPath = path.join(dataDirPath, 'time_tracker.db');
+const backupDirPath = path.join(dataDirPath, 'backups');
+const legacyDbPath = path.join(process.cwd(), 'time_tracker.db');
+const legacyBackupDirPath = path.join(process.cwd(), 'db_backups');
 const backupAlias = 'restore_source';
+
+const ensureDataDirectory = () => {
+  if (!fs.existsSync(dataDirPath)) {
+    fs.mkdirSync(dataDirPath, { recursive: true });
+  }
+};
+
+const migrateLegacyStorage = () => {
+  ensureDataDirectory();
+
+  if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
+    fs.renameSync(legacyDbPath, dbPath);
+  }
+
+  if (fs.existsSync(legacyBackupDirPath)) {
+    if (!fs.existsSync(backupDirPath)) {
+      fs.mkdirSync(backupDirPath, { recursive: true });
+    }
+
+    for (const entry of fs.readdirSync(legacyBackupDirPath)) {
+      const legacyEntryPath = path.join(legacyBackupDirPath, entry);
+      const newEntryPath = path.join(backupDirPath, entry);
+
+      if (!fs.existsSync(newEntryPath)) {
+        fs.renameSync(legacyEntryPath, newEntryPath);
+      }
+    }
+
+    if (fs.readdirSync(legacyBackupDirPath).length === 0) {
+      fs.rmdirSync(legacyBackupDirPath);
+    }
+  }
+};
+
+migrateLegacyStorage();
 
 // Create database if it doesn't exist
 const db = new Database(dbPath);

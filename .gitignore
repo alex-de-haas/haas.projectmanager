@@ -35,3 +35,6 @@ next-env.d.ts
 # SQLite database
 *.db
 *.db-journal
+
+# app runtime data
+/data/
