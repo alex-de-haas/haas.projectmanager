@@ -10,16 +10,19 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const allUsers = searchParams.get('allUsers') === 'true';
 
-    let query = 'SELECT * FROM day_offs WHERE user_id = ?';
-    const params: Array<string | number> = [userId];
+    let query = allUsers
+      ? 'SELECT day_offs.*, users.name AS user_name FROM day_offs JOIN users ON users.id = day_offs.user_id WHERE 1 = 1'
+      : 'SELECT * FROM day_offs WHERE user_id = ?';
+    const params: Array<string | number> = allUsers ? [] : [userId];
 
     if (startDate && endDate) {
       query += ' AND date BETWEEN ? AND ?';
       params.push(startDate, endDate);
     }
 
-    query += ' ORDER BY date ASC';
+    query += allUsers ? ' ORDER BY date ASC, users.name ASC' : ' ORDER BY date ASC';
 
     const stmt = db.prepare(query);
     const dayOffs = params.length > 0 ? stmt.all(...params) : stmt.all();

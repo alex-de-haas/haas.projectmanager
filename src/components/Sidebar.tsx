@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
+import { CalendarDays, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -36,6 +36,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Release Planner",
     href: "/release-planner",
     icon: Rocket,
+  },
+  {
+    label: "Day-Offs Calendar",
+    href: "/day-offs",
+    icon: CalendarDays,
   },
 ];
 
