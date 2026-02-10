@@ -8,6 +8,14 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -50,6 +58,7 @@ interface DatabaseBackupFile {
 interface AppUser {
   id: number;
   name: string;
+  email?: string | null;
 }
 
 interface ApiError {
@@ -63,9 +72,6 @@ interface SortableReleaseRowProps {
   onMarkCompleted: (release: Release) => void;
   updatingReleaseId: number | null;
 }
-
-const USER_STORAGE_KEY = "projectManager.activeUserId";
-const USER_COOKIE_NAME = "pm_user_id";
 
 function SortableReleaseRow({
   id,
@@ -175,6 +181,16 @@ export function GeneralSettingsForm({
   const [messageType, setMessageType] = useState<"success" | "error">(
     "success"
   );
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [showRenameUser, setShowRenameUser] = useState(false);
+  const [renameUserName, setRenameUserName] = useState("");
 
   const releaseSensors = useSensors(
     useSensor(PointerSensor),
@@ -211,32 +227,22 @@ export function GeneralSettingsForm({
     }
   };
 
-  const setActiveUserContext = (userId: string) => {
-    setActiveUserId(userId);
-    window.localStorage.setItem(USER_STORAGE_KEY, userId);
-    document.cookie = `${USER_COOKIE_NAME}=${userId}; path=/; max-age=31536000; samesite=lax`;
-  };
-
   const loadUsers = async () => {
     setLoadingUsers(true);
     try {
-      const response = await fetch("/api/users");
-      if (!response.ok) {
+      const [usersResponse, sessionResponse] = await Promise.all([
+        fetch("/api/users"),
+        fetch("/api/auth/session"),
+      ]);
+      if (!usersResponse.ok) {
         throw new Error("Failed to fetch users");
       }
 
-      const data = (await response.json()) as AppUser[];
+      const data = (await usersResponse.json()) as AppUser[];
       setUsers(data);
-
-      const storedUserId = window.localStorage.getItem(USER_STORAGE_KEY);
-      const firstUserId = data[0]?.id ? String(data[0].id) : "";
-      const nextUserId =
-        storedUserId && data.some((user) => String(user.id) === storedUserId)
-          ? storedUserId
-          : firstUserId;
-
-      if (nextUserId) {
-        setActiveUserContext(nextUserId);
+      if (sessionResponse.ok) {
+        const sessionData = (await sessionResponse.json()) as { user?: AppUser };
+        setActiveUserId(sessionData.user?.id ? String(sessionData.user.id) : "");
       } else {
         setActiveUserId("");
       }
@@ -351,26 +357,35 @@ export function GeneralSettingsForm({
 
   const handleSwitchUser = async (userId: string) => {
     if (!userId || userId === activeUserId) return;
-    setActiveUserContext(userId);
-    await loadSettings();
-    await loadReleases();
-    setMessage("Active user updated.");
-    setMessageType("success");
+    setMessage("Switching user profiles is disabled. Please sign in as another user.");
+    setMessageType("error");
+  };
+
+  const resetCreateUserDialog = () => {
+    setNewUserEmail("");
+    setNewUserName("");
+  };
+
+  const handleOpenCreateUser = () => {
+    resetCreateUserDialog();
+    setShowCreateUser(true);
   };
 
   const handleCreateUser = async () => {
-    const name = window.prompt("New user name");
-    if (!name) return;
-
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    const trimmedEmail = newUserEmail.trim();
+    const trimmed = newUserName.trim();
+    if (!trimmedEmail) {
+      setMessage("Email is required.");
+      setMessageType("error");
+      return;
+    }
 
     setCreatingUser(true);
     try {
       const response = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed, email: trimmedEmail }),
       });
 
       if (!response.ok) {
@@ -382,9 +397,9 @@ export function GeneralSettingsForm({
 
       const created = (await response.json()) as AppUser;
       setUsers((prev) => [...prev, created]);
-      setActiveUserContext(String(created.id));
-      await loadSettings();
-      setMessage(`Created user "${created.name}" and switched to it.`);
+      setShowCreateUser(false);
+      resetCreateUserDialog();
+      setMessage(`Created user "${created.name}". Credentials were sent to ${created.email ?? trimmedEmail}.`);
       setMessageType("success");
     } catch (err) {
       setMessage("Failed to create user.");
@@ -398,10 +413,7 @@ export function GeneralSettingsForm({
     const selected = users.find((user) => String(user.id) === activeUserId);
     if (!selected) return;
 
-    const name = window.prompt("Rename user", selected.name);
-    if (!name) return;
-
-    const trimmed = name.trim();
+    const trimmed = renameUserName.trim();
     if (!trimmed || trimmed === selected.name) return;
 
     setUpdatingUser(true);
@@ -421,6 +433,8 @@ export function GeneralSettingsForm({
 
       const updated = (await response.json()) as AppUser;
       setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+      setShowRenameUser(false);
+      setRenameUserName("");
       setMessage(`Renamed user to "${updated.name}".`);
       setMessageType("success");
     } catch (err) {
@@ -429,6 +443,13 @@ export function GeneralSettingsForm({
     } finally {
       setUpdatingUser(false);
     }
+  };
+
+  const handleOpenRenameUser = () => {
+    const selected = users.find((user) => String(user.id) === activeUserId);
+    if (!selected) return;
+    setRenameUserName(selected.name);
+    setShowRenameUser(true);
   };
 
   const handleDeleteUser = async () => {
@@ -455,11 +476,7 @@ export function GeneralSettingsForm({
 
       const nextUsers = users.filter((user) => user.id !== selected.id);
       setUsers(nextUsers);
-      const nextActiveId = String(nextUsers[0]?.id ?? "");
-      if (nextActiveId) {
-        setActiveUserContext(nextActiveId);
-        await loadSettings();
-      }
+      await loadUsers();
       setMessage(`Removed user "${selected.name}".`);
       setMessageType("success");
     } catch (err) {
@@ -887,6 +904,66 @@ export function GeneralSettingsForm({
     }
   };
 
+  const resetPasswordDialog = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  };
+
+  const handleOpenChangePassword = () => {
+    resetPasswordDialog();
+    setShowChangePassword(true);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setMessage("Please fill in all password fields.");
+      setMessageType("error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setMessage("New password and confirmation do not match.");
+      setMessageType("error");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setMessage("New password must be at least 8 characters long.");
+      setMessageType("error");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        setMessage(data.error || "Failed to change password.");
+        setMessageType("error");
+        return;
+      }
+
+      setShowChangePassword(false);
+      resetPasswordDialog();
+      setMessage("Password updated successfully.");
+      setMessageType("success");
+    } catch {
+      setMessage("Failed to change password.");
+      setMessageType("error");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   return loading ? (
     <div className="text-center py-8">Loading settings...</div>
   ) : (
@@ -907,7 +984,7 @@ export function GeneralSettingsForm({
             <Select
               value={activeUserId}
               onValueChange={handleSwitchUser}
-              disabled={loadingUsers || creatingUser || updatingUser}
+              disabled
             >
               <SelectTrigger id="activeUser">
                 <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select user"} />
@@ -917,14 +994,14 @@ export function GeneralSettingsForm({
                   <SelectItem key={user.id} value={String(user.id)}>
                     <div className="flex items-center gap-2">
                       <UserAvatar name={user.name} className="h-5 w-5 text-[9px]" />
-                      <span>{user.name}</span>
+                      <span>{user.name} {user.email ? `(${user.email})` : ""}</span>
                     </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Select which user profile this app is currently using.
+              Active user is derived from the current sign-in session.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-md border p-2">
@@ -941,7 +1018,7 @@ export function GeneralSettingsForm({
             <Button
               type="button"
               variant="outline"
-              onClick={handleCreateUser}
+              onClick={handleOpenCreateUser}
               disabled={creatingUser || updatingUser || loadingUsers}
               className="gap-2"
             >
@@ -951,7 +1028,7 @@ export function GeneralSettingsForm({
             <Button
               type="button"
               variant="outline"
-              onClick={handleRenameUser}
+              onClick={handleOpenRenameUser}
               disabled={!activeUserId || creatingUser || updatingUser || loadingUsers}
               className="gap-2"
             >
@@ -967,6 +1044,14 @@ export function GeneralSettingsForm({
             >
               <Trash2 className="h-4 w-4" />
               Remove User
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleOpenChangePassword}
+              disabled={!activeUserId || changingPassword}
+            >
+              Change Password
             </Button>
           </div>
         </TabsContent>
@@ -1250,6 +1335,178 @@ export function GeneralSettingsForm({
           <AlertDescription>{message}</AlertDescription>
         </Alert>
       )}
+
+      <Dialog
+        open={showCreateUser}
+        onOpenChange={(open) => {
+          setShowCreateUser(open);
+          if (!open) {
+            resetCreateUserDialog();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create User</DialogTitle>
+            <DialogDescription>
+              Enter email and optional display name. Temporary password will be sent by email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="newUserEmail">Email</Label>
+              <Input
+                id="newUserEmail"
+                type="email"
+                value={newUserEmail}
+                onChange={(event) => setNewUserEmail(event.target.value)}
+                disabled={creatingUser}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newUserName">Name (optional)</Label>
+              <Input
+                id="newUserName"
+                type="text"
+                value={newUserName}
+                onChange={(event) => setNewUserName(event.target.value)}
+                disabled={creatingUser}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowCreateUser(false)}
+              disabled={creatingUser}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateUser}
+              disabled={creatingUser}
+            >
+              {creatingUser ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showRenameUser}
+        onOpenChange={(open) => {
+          setShowRenameUser(open);
+          if (!open) {
+            setRenameUserName("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename User</DialogTitle>
+            <DialogDescription>
+              Set a new display name for the selected user.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="renameUserName">Name</Label>
+            <Input
+              id="renameUserName"
+              type="text"
+              value={renameUserName}
+              onChange={(event) => setRenameUserName(event.target.value)}
+              disabled={updatingUser}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowRenameUser(false)}
+              disabled={updatingUser}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleRenameUser}
+              disabled={updatingUser}
+            >
+              {updatingUser ? "Saving..." : "Save Name"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showChangePassword}
+        onOpenChange={(open) => {
+          setShowChangePassword(open);
+          if (!open) {
+            resetPasswordDialog();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter your current password and set a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="currentPassword">Current Password</Label>
+              <Input
+                id="currentPassword"
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                disabled={changingPassword}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                disabled={changingPassword}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                disabled={changingPassword}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowChangePassword(false)}
+              disabled={changingPassword}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleChangePassword}
+              disabled={changingPassword}
+            >
+              {changingPassword ? "Saving..." : "Save Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="mt-6 flex flex-wrap justify-end gap-2">
         {showCancel && (

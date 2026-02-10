@@ -41,6 +41,15 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 The database file (`data/time_tracker.db`) will be created automatically on first run.
 
+### 4. Sign In
+
+The app now uses email/password authentication.
+
+- Default user email: `a.zayats@sam-solutions.com`
+- Default temporary password: `TempP@ssword`
+
+You will be redirected to `/login` before accessing application pages.
+
 ## Usage
 
 ### Adding Tasks
@@ -197,3 +206,9 @@ You can:
 ## License
 
 MIT
+### User Creation Credentials Email
+
+When creating a user, you must provide an email address. A temporary password is generated automatically and sent via local `sendmail`.
+
+- Sender address can be customized with `SMTP_FROM` env var
+- This requires `/usr/sbin/sendmail` to be available and configured on the host

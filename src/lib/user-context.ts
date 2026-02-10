@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import db from "@/lib/db";
+import { getAuthenticatedUserId } from "@/lib/auth";
 
 export const USER_COOKIE_NAME = "pm_user_id";
 export const DEFAULT_USER_ID = 1;
@@ -36,6 +37,9 @@ const resolveKnownUserId = (candidateUserId: number | null): number => {
 };
 
 export const getRequestUserId = (request: NextRequest): number => {
+  const fromAuth = getAuthenticatedUserId(request);
+  if (fromAuth) return resolveKnownUserId(fromAuth);
+
   const fromHeader = parseUserId(request.headers.get("x-user-id"));
   if (fromHeader) return resolveKnownUserId(fromHeader);
 

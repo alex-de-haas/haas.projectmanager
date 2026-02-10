@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { hashPassword } from '@/lib/password';
 
 const dataDirPath = path.join(process.cwd(), 'data');
 const dbPath = path.join(dataDirPath, 'time_tracker.db');
@@ -53,6 +54,8 @@ const initDb = () => {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
+      email TEXT,
+      password_hash TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -195,6 +198,23 @@ const initDb = () => {
     ensureUserColumn("release_work_items");
     ensureUserColumn("blockers");
     ensureUserColumn("checklist_items");
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  try {
+    const usersTableInfo = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    const hasEmailColumn = usersTableInfo.some((col) => col.name === "email");
+    const hasPasswordHashColumn = usersTableInfo.some((col) => col.name === "password_hash");
+
+    if (!hasEmailColumn) {
+      db.exec("ALTER TABLE users ADD COLUMN email TEXT");
+    }
+    if (!hasPasswordHashColumn) {
+      db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT");
+    }
+
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)");
   } catch (error) {
     console.error('Migration error:', error);
   }
@@ -431,6 +451,26 @@ const initDb = () => {
     }
   } catch (error) {
     console.error('Error creating default settings:', error);
+  }
+
+  // Seed default credentials once for existing user
+  try {
+    const authSeeded = db
+      .prepare('SELECT id FROM settings WHERE user_id = ? AND key = ?')
+      .get(1, 'auth_seeded_v1') as { id: number } | undefined;
+
+    if (!authSeeded) {
+      const tempPasswordHash = hashPassword('TempP@ssword');
+      db.prepare(
+        'UPDATE users SET email = ?, password_hash = ? WHERE id = ?'
+      ).run('a.zayats@sam-solutions.com', tempPasswordHash, 1);
+
+      db.prepare(
+        'INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, ?, ?)'
+      ).run(1, 'auth_seeded_v1', '1');
+    }
+  } catch (error) {
+    console.error('Error seeding auth credentials:', error);
   }
 };
 

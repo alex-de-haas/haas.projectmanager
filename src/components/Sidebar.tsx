@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clock3, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
+import { Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -11,8 +11,6 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
-const USER_STORAGE_KEY = "projectManager.activeUserId";
-const USER_COOKIE_NAME = "pm_user_id";
 
 type SidebarMode = "compact" | "normal";
 
@@ -25,6 +23,7 @@ interface NavItem {
 interface AppUser {
   id: number;
   name: string;
+  email?: string | null;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -43,8 +42,8 @@ const NAV_ITEMS: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [mode, setMode] = useState<SidebarMode>("compact");
-  const [users, setUsers] = useState<AppUser[]>([]);
-  const [activeUserId, setActiveUserId] = useState<string>("");
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const isLoginRoute = pathname === "/login";
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -58,33 +57,21 @@ export default function Sidebar() {
   }, [mode]);
 
   useEffect(() => {
+    if (isLoginRoute) return;
+
     const loadUsers = async () => {
       try {
-        const response = await fetch("/api/users");
+        const response = await fetch("/api/auth/session");
         if (!response.ok) return;
-
-        const data = (await response.json()) as AppUser[];
-        setUsers(data);
-
-        const storedUserId = window.localStorage.getItem(USER_STORAGE_KEY);
-        const firstUserId = data[0]?.id ? String(data[0].id) : "";
-        const nextUserId =
-          storedUserId && data.some((user) => String(user.id) === storedUserId)
-            ? storedUserId
-            : firstUserId;
-
-        if (nextUserId) {
-          setActiveUserId(nextUserId);
-          window.localStorage.setItem(USER_STORAGE_KEY, nextUserId);
-          document.cookie = `${USER_COOKIE_NAME}=${nextUserId}; path=/; max-age=31536000; samesite=lax`;
-        }
+        const data = (await response.json()) as { user?: AppUser };
+        setCurrentUser(data.user ?? null);
       } catch (error) {
-        console.error("Failed to load users:", error);
+        console.error("Failed to load current user:", error);
       }
     };
 
     loadUsers();
-  }, []);
+  }, [isLoginRoute]);
 
   const isCompact = mode === "compact";
 
@@ -101,7 +88,14 @@ export default function Sidebar() {
     setMode((prev) => (prev === "compact" ? "normal" : "compact"));
   };
 
-  const currentUser = users.find((user) => String(user.id) === activeUserId);
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
+
+  if (isLoginRoute) {
+    return null;
+  }
 
   return (
     <aside
@@ -183,6 +177,20 @@ export default function Sidebar() {
           </Link>
         </Button>
         <ThemeToggle isCompact={isCompact} align="start" />
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleLogout}
+          className={cn(
+            "w-full justify-start gap-3 px-3",
+            "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            isCompact && "justify-center px-0"
+          )}
+          title={isCompact ? "Log out" : undefined}
+        >
+          <LogOut className="h-4 w-4" />
+          <span className={cn("text-sm", isCompact && "sr-only")}>Log out</span>
+        </Button>
         <Button
           variant="ghost"
           onClick={toggleMode}

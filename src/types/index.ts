@@ -126,5 +126,6 @@ export interface ChecklistItem {
 export interface User {
   id: number;
   name: string;
+  email?: string | null;
   created_at: Date;
 }
