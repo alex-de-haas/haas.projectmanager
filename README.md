@@ -187,8 +187,11 @@ You can:
 - Or kill existing process: `lsof -ti:3000 | xargs kill`
 
 ### Database backup and restore
-- **Backup**: Simply copy `time_tracker.db` to a safe location
-- **Restore**: Replace `time_tracker.db` with your backup file
+- **In app (recommended)**: Open Settings -> General -> Database Backups
+- **Create backup**: Creates timestamped `.db` files in `db_backups/`
+- **Restore backup**: Select a backup file and restore data from it
+- **API list/create backups**: `GET/POST /api/database/backups`
+- **API restore backup**: `POST /api/database/restore`
 - **Reset**: Delete `time_tracker.db` and restart the server for fresh sample data
 
 ## License

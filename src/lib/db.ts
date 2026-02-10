@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 
 const dbPath = path.join(process.cwd(), 'time_tracker.db');
+const backupDirPath = path.join(process.cwd(), 'db_backups');
+const backupAlias = 'restore_source';
 
 // Create database if it doesn't exist
 const db = new Database(dbPath);
@@ -243,5 +245,169 @@ const initDb = () => {
 
 // Initialize on first import
 initDb();
+
+interface BackupFileInfo {
+  fileName: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+const ensureBackupDirectory = () => {
+  if (!fs.existsSync(backupDirPath)) {
+    fs.mkdirSync(backupDirPath, { recursive: true });
+  }
+};
+
+const sanitizeBackupFileName = (fileName: string) => {
+  if (!/^[a-zA-Z0-9._-]+\.db$/.test(fileName)) {
+    throw new Error('Invalid backup file name');
+  }
+  return fileName;
+};
+
+const resolveBackupPath = (fileName: string) => {
+  const safeFileName = sanitizeBackupFileName(fileName);
+  const fullPath = path.resolve(backupDirPath, safeFileName);
+
+  if (!fullPath.startsWith(`${backupDirPath}${path.sep}`)) {
+    throw new Error('Invalid backup path');
+  }
+
+  return fullPath;
+};
+
+const quoteIdentifier = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
+const generateBackupFileName = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = `${now.getMonth() + 1}`.padStart(2, '0');
+  const dd = `${now.getDate()}`.padStart(2, '0');
+  const hh = `${now.getHours()}`.padStart(2, '0');
+  const min = `${now.getMinutes()}`.padStart(2, '0');
+  const sec = `${now.getSeconds()}`.padStart(2, '0');
+
+  return `time_tracker_backup_${yyyy}${mm}${dd}_${hh}${min}${sec}.db`;
+};
+
+export const createDatabaseBackup = async (requestedFileName?: string): Promise<BackupFileInfo> => {
+  ensureBackupDirectory();
+
+  const fileName = requestedFileName ? sanitizeBackupFileName(requestedFileName) : generateBackupFileName();
+  const backupPath = resolveBackupPath(fileName);
+
+  if (fs.existsSync(backupPath)) {
+    throw new Error('A backup file with this name already exists');
+  }
+
+  await db.backup(backupPath);
+  const stats = fs.statSync(backupPath);
+
+  return {
+    fileName,
+    sizeBytes: stats.size,
+    createdAt: stats.birthtime.toISOString(),
+  };
+};
+
+export const listDatabaseBackups = (): BackupFileInfo[] => {
+  ensureBackupDirectory();
+
+  return fs
+    .readdirSync(backupDirPath)
+    .filter((entry) => entry.endsWith('.db'))
+    .map((fileName) => {
+      const fullPath = resolveBackupPath(fileName);
+      const stats = fs.statSync(fullPath);
+
+      return {
+        fileName,
+        sizeBytes: stats.size,
+        createdAt: stats.birthtime.toISOString(),
+      };
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+};
+
+export const deleteDatabaseBackup = (fileName: string) => {
+  ensureBackupDirectory();
+  const backupPath = resolveBackupPath(fileName);
+
+  if (!fs.existsSync(backupPath)) {
+    throw new Error('Backup file not found');
+  }
+
+  fs.unlinkSync(backupPath);
+};
+
+export const restoreDatabaseFromBackup = (fileName: string) => {
+  ensureBackupDirectory();
+  const backupPath = resolveBackupPath(fileName);
+
+  if (!fs.existsSync(backupPath)) {
+    throw new Error('Backup file not found');
+  }
+
+  const escapedPath = backupPath.replace(/'/g, "''");
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  let attached = false;
+  let transactionStarted = false;
+
+  try {
+    db.exec(`ATTACH DATABASE '${escapedPath}' AS ${backupAlias}`);
+    attached = true;
+
+    const mainTables = db
+      .prepare("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all() as Array<{ name: string }>;
+    const sourceTables = db
+      .prepare(`SELECT name FROM ${backupAlias}.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+      .all() as Array<{ name: string }>;
+
+    const sourceTableSet = new Set(sourceTables.map((table) => table.name));
+    const tablesToRestore = mainTables
+      .map((table) => table.name)
+      .filter((tableName) => sourceTableSet.has(tableName));
+
+    if (tablesToRestore.length === 0) {
+      throw new Error('Backup does not contain compatible tables');
+    }
+
+    db.exec('BEGIN');
+    transactionStarted = true;
+
+    for (const tableName of tablesToRestore) {
+      const quotedName = quoteIdentifier(tableName);
+      db.exec(`DELETE FROM main.${quotedName}`);
+      db.exec(`INSERT INTO main.${quotedName} SELECT * FROM ${backupAlias}.${quotedName}`);
+    }
+
+    const mainHasSqliteSequence = db
+      .prepare("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'")
+      .get() as { name: string } | undefined;
+    const backupHasSqliteSequence = db
+      .prepare(`SELECT name FROM ${backupAlias}.sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'`)
+      .get() as { name: string } | undefined;
+
+    if (mainHasSqliteSequence && backupHasSqliteSequence) {
+      db.exec('DELETE FROM main.sqlite_sequence');
+      db.exec(`INSERT INTO main.sqlite_sequence SELECT * FROM ${backupAlias}.sqlite_sequence`);
+    }
+
+    db.exec('COMMIT');
+    transactionStarted = false;
+  } catch (error) {
+    if (transactionStarted) {
+      db.exec('ROLLBACK');
+    }
+    throw error;
+  } finally {
+    if (attached) {
+      db.exec(`DETACH DATABASE ${backupAlias}`);
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+};
 
 export default db;

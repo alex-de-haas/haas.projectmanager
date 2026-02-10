@@ -20,6 +20,12 @@ interface GeneralSettingsFormProps {
   showCancel?: boolean;
 }
 
+interface DatabaseBackupFile {
+  fileName: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export function GeneralSettingsForm({
   onCancel,
   onSaved,
@@ -40,6 +46,12 @@ export function GeneralSettingsForm({
   const [lmStudioModel, setLmStudioModel] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [backups, setBackups] = useState<DatabaseBackupFile[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(true);
+  const [creatingBackup, setCreatingBackup] = useState(false);
+  const [deletingBackup, setDeletingBackup] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,7 +83,32 @@ export function GeneralSettingsForm({
 
   useEffect(() => {
     loadSettings();
+    loadBackups();
   }, []);
+
+  const loadBackups = async () => {
+    setLoadingBackups(true);
+    try {
+      const response = await fetch("/api/database/backups");
+      if (!response.ok) {
+        throw new Error("Failed to load backups");
+      }
+
+      const data = (await response.json()) as DatabaseBackupFile[];
+      setBackups(data);
+      setSelectedBackup((currentSelected) => {
+        if (currentSelected && data.some((backup) => backup.fileName === currentSelected)) {
+          return currentSelected;
+        }
+        return data[0]?.fileName ?? "";
+      });
+    } catch (err) {
+      setMessage("Failed to load database backups.");
+      setMessageType("error");
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -273,13 +310,134 @@ export function GeneralSettingsForm({
     }
   };
 
+  const formatBackupSize = (sizeBytes: number) => {
+    if (sizeBytes < 1024) {
+      return `${sizeBytes} B`;
+    }
+    if (sizeBytes < 1024 * 1024) {
+      return `${(sizeBytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleCreateBackup = async () => {
+    setCreatingBackup(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/database/backups", {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create backup");
+      }
+
+      await loadBackups();
+      setSelectedBackup(data.fileName);
+      setMessage(`Database backup created: ${data.fileName}`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to create database backup.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setCreatingBackup(false);
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    if (!selectedBackup) {
+      setMessage("Please select a backup file to restore.");
+      setMessageType("error");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Restore database from ${selectedBackup}? This will replace current data in this database.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setRestoringBackup(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/database/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: selectedBackup }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to restore backup");
+      }
+
+      setMessage(`Database restored from ${selectedBackup}. Refresh to see updated data.`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to restore database backup.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setRestoringBackup(false);
+    }
+  };
+
+  const handleDeleteBackup = async () => {
+    if (!selectedBackup) {
+      setMessage("Please select a backup file to delete.");
+      setMessageType("error");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete backup ${selectedBackup}? This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingBackup(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/database/backups?fileName=${encodeURIComponent(selectedBackup)}`,
+        { method: "DELETE" }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete backup");
+      }
+
+      const deletedFile = selectedBackup;
+      await loadBackups();
+      setMessage(`Backup deleted: ${deletedFile}`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to delete database backup.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setDeletingBackup(false);
+    }
+  };
+
   return loading ? (
     <div className="text-center py-8">Loading settings...</div>
   ) : (
     <form onSubmit={handleSave}>
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="database">Database</TabsTrigger>
           <TabsTrigger value="azure">Azure DevOps</TabsTrigger>
           <TabsTrigger value="ai">AI (LM Studio)</TabsTrigger>
         </TabsList>
@@ -302,6 +460,79 @@ export function GeneralSettingsForm({
               Set the default number of hours in a working day (used for
               calculations)
             </p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="database" className="space-y-4 mt-4">
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="space-y-1">
+              <Label htmlFor="databaseBackupSelect">Database Backups</Label>
+              <p className="text-xs text-muted-foreground">
+                Create separate snapshot files and restore from them when needed.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCreateBackup}
+                disabled={creatingBackup || deletingBackup || saving || restoringBackup}
+              >
+                {creatingBackup ? "Creating Backup..." : "Create Backup"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={loadBackups}
+                disabled={loadingBackups || creatingBackup || deletingBackup || restoringBackup || saving}
+              >
+                {loadingBackups ? "Refreshing..." : "Refresh Backups"}
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <Select
+                value={selectedBackup}
+                onValueChange={setSelectedBackup}
+                disabled={loadingBackups || backups.length === 0 || creatingBackup || deletingBackup || restoringBackup}
+              >
+                <SelectTrigger id="databaseBackupSelect">
+                  <SelectValue placeholder={loadingBackups ? "Loading backups..." : "Select backup file"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {backups.map((backup) => (
+                    <SelectItem key={backup.fileName} value={backup.fileName}>
+                      {backup.fileName} ({formatBackupSize(backup.sizeBytes)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {backups.length === 0
+                  ? "No backup files found."
+                  : `Latest backup: ${new Date(backups[0].createdAt).toLocaleString()}`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDeleteBackup}
+                disabled={!selectedBackup || deletingBackup || restoringBackup || creatingBackup || saving}
+              >
+                {deletingBackup ? "Deleting..." : "Delete Selected Backup"}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleRestoreBackup}
+                disabled={!selectedBackup || restoringBackup || deletingBackup || creatingBackup || saving}
+              >
+                {restoringBackup ? "Restoring..." : "Restore Selected Backup"}
+              </Button>
+            </div>
           </div>
         </TabsContent>
 
@@ -339,7 +570,7 @@ export function GeneralSettingsForm({
               placeholder="Enter your Azure DevOps PAT"
             />
             <p className="text-xs text-muted-foreground">
-              Create a PAT at: User Settings -> Personal access tokens -> New
+              Create a PAT at: User Settings -&gt; Personal access tokens -&gt; New
               Token (needs Work Items: Read scope)
             </p>
           </div>
