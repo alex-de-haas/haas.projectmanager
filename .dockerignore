@@ -1,0 +1,11 @@
+.git
+.github
+.next
+node_modules
+npm-debug.log
+Dockerfile
+README.md
+docs
+db_backups
+time_tracker.db
+*.db
