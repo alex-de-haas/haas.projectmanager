@@ -59,6 +59,7 @@ interface AppUser {
   id: number;
   name: string;
   email?: string | null;
+  created_at?: string;
 }
 
 interface ApiError {
@@ -1012,6 +1013,39 @@ export function GeneralSettingsForm({
             <p className="text-sm font-medium">
               {users.find((user) => String(user.id) === activeUserId)?.name || "No user selected"}
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>All Created Users</Label>
+            <div className="space-y-2 rounded-md border p-3">
+              {loadingUsers ? (
+                <p className="text-sm text-muted-foreground">Loading users...</p>
+              ) : users.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No users created yet.</p>
+              ) : (
+                users.map((user) => {
+                  const createdAt = user.created_at
+                    ? new Date(user.created_at).toLocaleString()
+                    : "Unknown";
+                  return (
+                    <div
+                      key={`user-row-${user.id}`}
+                      className="flex items-center justify-between gap-3 rounded-md border bg-background p-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{user.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {user.email || "No email"}
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-xs text-muted-foreground">
+                        Created: {createdAt}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
