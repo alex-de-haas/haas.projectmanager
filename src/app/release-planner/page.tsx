@@ -48,7 +48,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ListTodo, MoreVertical } from "lucide-react";
+import { Bug, GripVertical, ListTodo, MoreVertical } from "lucide-react";
 
 type ChildDiscipline = "backend" | "frontend" | "design";
 
@@ -971,7 +971,10 @@ export default function ReleaseTrackingPage() {
                                           handleOpenChildItemsDialog(externalId, item.title, "task");
                                         }}
                                       >
-                                        Tasks: {loadingChildCounts ? "?" : childCounts.tasks}
+                                        <span className="inline-flex items-center gap-1">
+                                          <ListTodo className="w-3 h-3" aria-hidden="true" />
+                                          {loadingChildCounts ? "?" : childCounts.tasks}
+                                        </span>
                                       </Badge>
                                       <Badge
                                         variant="outline"
@@ -982,7 +985,10 @@ export default function ReleaseTrackingPage() {
                                           handleOpenChildItemsDialog(externalId, item.title, "bug");
                                         }}
                                       >
-                                        Bugs: {loadingChildCounts ? "?" : childCounts.bugs}
+                                        <span className="inline-flex items-center gap-1">
+                                          <Bug className="w-3 h-3" aria-hidden="true" />
+                                          {loadingChildCounts ? "?" : childCounts.bugs}
+                                        </span>
                                       </Badge>
                                     </>
                                   )}

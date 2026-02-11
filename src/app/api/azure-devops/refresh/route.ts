@@ -7,6 +7,13 @@ import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
 import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
+interface ReleaseWorkItemSnapshot {
+  title: string;
+  work_item_type: string | null;
+  state: string | null;
+  tags: string | null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
@@ -45,11 +52,24 @@ export async function POST(request: NextRequest) {
       'SELECT * FROM tasks WHERE external_source = ? AND user_id = ? AND project_id = ? AND external_id IS NOT NULL'
     ).all('azure_devops', userId, projectId) as Task[];
 
-    if (importedTasks.length === 0) {
+    // Get all release planner work items imported from Azure DevOps
+    const importedReleaseWorkItems = db.prepare(
+      `SELECT external_id, title, work_item_type, state, tags
+       FROM release_work_items
+       WHERE external_source = ? AND project_id = ? AND external_id IS NOT NULL`
+    ).all('azure_devops', projectId) as Array<{
+      external_id: string;
+      title: string;
+      work_item_type: string | null;
+      state: string | null;
+      tags: string | null;
+    }>;
+
+    if (importedTasks.length === 0 && importedReleaseWorkItems.length === 0) {
       return NextResponse.json({ 
         updated: 0, 
         skipped: 0, 
-        message: 'No imported tasks found to refresh' 
+        message: 'No imported Azure DevOps items found to refresh' 
       });
     }
 
@@ -60,10 +80,17 @@ export async function POST(request: NextRequest) {
 
     const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
 
-    // Extract work item IDs
-    const workItemIds = importedTasks
-      .map(task => parseInt(task.external_id!))
-      .filter(id => !isNaN(id));
+    // Extract unique work item IDs from tasks + release planner user stories
+    const workItemIdSet = new Set<number>();
+    for (const task of importedTasks) {
+      const id = task.external_id ? parseInt(task.external_id) : NaN;
+      if (!isNaN(id)) workItemIdSet.add(id);
+    }
+    for (const item of importedReleaseWorkItems) {
+      const id = parseInt(item.external_id);
+      if (!isNaN(id)) workItemIdSet.add(id);
+    }
+    const workItemIds = Array.from(workItemIdSet);
 
     if (workItemIds.length === 0) {
       return NextResponse.json({ 
@@ -93,6 +120,16 @@ export async function POST(request: NextRequest) {
 
     const updated: Array<{ id: number; title: string; status: string }> = [];
     const skipped: Array<{ id: number; reason: string }> = [];
+    const updateTasksStmt = db.prepare(`
+      UPDATE tasks 
+      SET title = ?, type = ?, status = ?, completed_at = ?
+      WHERE id = ? AND user_id = ? AND project_id = ?
+    `);
+    const updateReleaseWorkItemsStmt = db.prepare(`
+      UPDATE release_work_items
+      SET title = ?, work_item_type = ?, state = ?, tags = ?
+      WHERE external_source = 'azure_devops' AND CAST(external_id AS INTEGER) = ? AND project_id = ?
+    `);
 
     const importedTasksByExternalId = new Map<number, Task>();
     for (const task of importedTasks) {
@@ -101,15 +138,32 @@ export async function POST(request: NextRequest) {
         importedTasksByExternalId.set(externalId, task);
       }
     }
+    const importedReleaseWorkItemsByExternalId = new Map<number, ReleaseWorkItemSnapshot[]>();
+    for (const item of importedReleaseWorkItems) {
+      const externalId = parseInt(item.external_id);
+      if (isNaN(externalId)) {
+        continue;
+      }
+      const existing = importedReleaseWorkItemsByExternalId.get(externalId) ?? [];
+      existing.push({
+        title: item.title,
+        work_item_type: item.work_item_type,
+        state: item.state,
+        tags: item.tags,
+      });
+      importedReleaseWorkItemsByExternalId.set(externalId, existing);
+    }
 
-    for (const workItem of workItems || []) {
+    for (const workItem of workItems) {
       if (!workItem.id || !workItem.fields) {
         continue;
       }
 
       const title = workItem.fields['System.Title'] as string || `Work Item ${workItem.id}`;
-      const workItemType = (workItem.fields['System.WorkItemType'] as string || 'Task').toLowerCase();
+      const releaseWorkItemType = workItem.fields['System.WorkItemType'] as string || 'Task';
+      const workItemType = releaseWorkItemType.toLowerCase();
       const status = workItem.fields['System.State'] as string || null;
+      const tags = workItem.fields['System.Tags'] as string || null;
       const closedDate = workItem.fields['Microsoft.VSTS.Common.ClosedDate'] as string || 
                         workItem.fields['Microsoft.VSTS.Common.ResolvedDate'] as string || 
                         workItem.fields['System.ClosedDate'] as string || 
@@ -123,38 +177,49 @@ export async function POST(request: NextRequest) {
 
       // Find the corresponding task in our database
       const task = importedTasksByExternalId.get(workItem.id);
-      
-      if (!task) {
-        skipped.push({ id: workItem.id, reason: 'Not found in database' });
-        continue;
+      const releaseItems = importedReleaseWorkItemsByExternalId.get(workItem.id) ?? [];
+      let didUpdate = false;
+
+      if (task) {
+        // Format completed_at for comparison (convert both to ISO string format if they exist)
+        const taskCompletedAt = task.completed_at ? new Date(task.completed_at).toISOString() : null;
+        const workItemCompletedAt = closedDate ? new Date(closedDate).toISOString() : null;
+
+        const hasTaskChanges =
+          task.title !== title ||
+          task.type !== taskType ||
+          task.status !== status ||
+          taskCompletedAt !== workItemCompletedAt;
+
+        if (hasTaskChanges) {
+          updateTasksStmt.run(title, taskType, status, closedDate, task.id, userId, projectId);
+          didUpdate = true;
+        }
       }
 
-      // Format completed_at for comparison (convert both to ISO string format if they exist)
-      const taskCompletedAt = task.completed_at ? new Date(task.completed_at).toISOString() : null;
-      const workItemCompletedAt = closedDate ? new Date(closedDate).toISOString() : null;
+      const hasReleaseWorkItemChanges = releaseItems.some((item) =>
+        item.title !== title ||
+        item.work_item_type !== releaseWorkItemType ||
+        item.state !== status ||
+        item.tags !== tags
+      );
+      if (hasReleaseWorkItemChanges) {
+        updateReleaseWorkItemsStmt.run(
+          title,
+          releaseWorkItemType,
+          status,
+          tags,
+          workItem.id,
+          projectId
+        );
+        didUpdate = true;
+      }
 
-      // Check if anything changed
-      const hasChanges = 
-        task.title !== title || 
-        task.type !== taskType || 
-        task.status !== status ||
-        taskCompletedAt !== workItemCompletedAt;
-
-      if (!hasChanges) {
+      if (didUpdate) {
+        updated.push({ id: workItem.id, title, status: status || 'N/A' });
+      } else {
         skipped.push({ id: workItem.id, reason: 'No changes detected' });
-        continue;
       }
-
-      // Update task
-      const stmt = db.prepare(`
-        UPDATE tasks 
-        SET title = ?, type = ?, status = ?, completed_at = ?
-        WHERE id = ? AND user_id = ? AND project_id = ?
-      `);
-
-      stmt.run(title, taskType, status, closedDate, task.id, userId, projectId);
-      
-      updated.push({ id: workItem.id, title, status: status || 'N/A' });
     }
 
     return NextResponse.json({
