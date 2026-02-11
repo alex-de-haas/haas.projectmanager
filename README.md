@@ -212,3 +212,4 @@ When creating a user, you must provide an email address. The app generates a one
 
 - Invitation links expire after 7 days
 - Accepting the link activates the account and signs the user in
+- To force a public domain in generated links, set `APP_BASE_URL` (example: `https://pm.example.com`)

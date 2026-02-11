@@ -3,6 +3,40 @@ import db from "@/lib/db";
 import type { User } from "@/types";
 import { createInvitationToken, hashInvitationToken, INVITATION_EXPIRY_SECONDS } from "@/lib/invitations";
 
+const normalizeBaseUrl = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+};
+
+const getInvitationBaseUrl = (request: NextRequest): string => {
+  const configured = normalizeBaseUrl(process.env.APP_BASE_URL ?? "");
+  if (configured) {
+    return configured;
+  }
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (forwardedHost) {
+    const host = forwardedHost.split(",")[0]?.trim();
+    if (host) {
+      const forwardedProto = request.headers.get("x-forwarded-proto");
+      const proto = forwardedProto?.split(",")[0]?.trim() || request.nextUrl.protocol.replace(":", "");
+      const fromForwardedHeaders = normalizeBaseUrl(`${proto}://${host}`);
+      if (fromForwardedHeaders) {
+        return fromForwardedHeaders;
+      }
+    }
+  }
+
+  return request.nextUrl.origin;
+};
+
 const parseUserId = (value: string | null): number | null => {
   if (!value) return null;
   const parsed = Number(value);
@@ -86,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     const user = createUserWithInvitation();
 
-    const inviteLink = `${request.nextUrl.origin}/invite?token=${encodeURIComponent(invitationToken)}`;
+    const inviteLink = `${getInvitationBaseUrl(request)}/invite?token=${encodeURIComponent(invitationToken)}`;
     return NextResponse.json(
       {
         ...user,
