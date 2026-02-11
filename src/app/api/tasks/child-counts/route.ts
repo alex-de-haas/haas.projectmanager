@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getRequestProjectId, getRequestUserId } from "@/lib/user-context";
@@ -19,14 +21,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const rawTitles = Array.isArray(body?.workItemTitles) ? body.workItemTitles : [];
 
-    const titles = Array.from(
-      new Set(
-        rawTitles
-          .filter((value: unknown): value is string => typeof value === "string")
-          .map((title) => title.trim())
-          .filter(Boolean)
-      )
-    );
+    const validTitles = rawTitles
+      .filter((value: unknown): value is string => typeof value === "string")
+      .map((title: string) => title.trim())
+      .filter((title: string) => title.length > 0);
+    const titles: string[] = Array.from(new Set<string>(validTitles));
 
     if (titles.length === 0) {
       return NextResponse.json({ counts: {} });
@@ -66,4 +65,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

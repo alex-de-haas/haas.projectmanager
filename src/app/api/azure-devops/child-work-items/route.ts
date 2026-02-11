@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import * as azdev from "azure-devops-node-api";
 import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi";
@@ -162,13 +164,10 @@ export async function POST(request: NextRequest) {
     const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const rawParentIds = Array.isArray(body?.parentIds) ? body.parentIds : [];
-    const parentIds = Array.from(
-      new Set(
-        rawParentIds
-          .map((value: unknown) => parseParentId(value))
-          .filter((value: number | null): value is number => value !== null)
-      )
-    );
+    const validParentIds = rawParentIds
+      .map((value: unknown) => parseParentId(value))
+      .filter((value: number | null): value is number => value !== null);
+    const parentIds: number[] = Array.from(new Set<number>(validParentIds));
 
     if (parentIds.length === 0) {
       return NextResponse.json({ counts: {} });
@@ -217,4 +216,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

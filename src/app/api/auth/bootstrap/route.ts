@@ -5,6 +5,8 @@ import { hashPassword } from "@/lib/password";
 import type { User } from "@/types";
 import { PROJECT_COOKIE_NAME } from "@/lib/user-context";
 
+export const dynamic = "force-dynamic";
+
 const normalizeEmail = (value: unknown): string =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
 

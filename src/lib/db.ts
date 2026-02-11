@@ -44,8 +44,31 @@ const migrateLegacyStorage = () => {
 
 migrateLegacyStorage();
 
+let dbAvailable = true;
+const createUnavailableDb = (error: unknown) =>
+  new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        throw new Error(
+          `Database unavailable: better-sqlite3 native bindings could not be loaded. Tried to access "${String(prop)}". Original error: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      },
+    }
+  );
+
 // Create database if it doesn't exist
-const db = new Database(dbPath);
+const db: any = (() => {
+  try {
+    return new Database(dbPath);
+  } catch (error) {
+    dbAvailable = false;
+    console.error('Database initialization error:', error);
+    return createUnavailableDb(error);
+  }
+})();
 
 // Initialize database schema
 const initDb = () => {
@@ -738,7 +761,9 @@ const initDb = () => {
 };
 
 // Initialize on first import
-initDb();
+if (dbAvailable) {
+  initDb();
+}
 
 interface BackupFileInfo {
   fileName: string;
