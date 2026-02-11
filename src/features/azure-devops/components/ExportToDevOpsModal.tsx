@@ -138,7 +138,7 @@ export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOps
         <DialogHeader>
           <DialogTitle>Export to Azure DevOps</DialogTitle>
           <DialogDescription>
-            Export &quot;{task.title}&quot; to Azure DevOps. When assignment is set, it uses your current user email.
+            Export &quot;{task.title}&quot; to Azure DevOps. When assignment is set, it uses the selected assignee email from task creation.
             Optionally select a parent work item.
           </DialogDescription>
         </DialogHeader>

@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     const userId = getRequestUserId(request);
     const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
-    const { title, type } = body;
+    const { title, type, userId: requestedUserId } = body;
 
     if (!title || !type) {
       return NextResponse.json(
@@ -131,15 +131,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let targetUserId = userId;
+    if (requestedUserId !== undefined) {
+      const parsedTargetUserId = Number(requestedUserId);
+      if (!Number.isInteger(parsedTargetUserId) || parsedTargetUserId <= 0) {
+        return NextResponse.json(
+          { error: 'userId must be a positive integer' },
+          { status: 400 }
+        );
+      }
+
+      const isProjectMember = db
+        .prepare('SELECT 1 as ok FROM project_members WHERE project_id = ? AND user_id = ?')
+        .get(projectId, parsedTargetUserId) as { ok: number } | undefined;
+
+      if (!isProjectMember) {
+        return NextResponse.json(
+          { error: 'Selected user is not assigned to this project' },
+          { status: 400 }
+        );
+      }
+
+      targetUserId = parsedTargetUserId;
+    }
+
     // Get the current max display_order and add 1 for the new task
     const maxOrder = db
       .prepare('SELECT MAX(display_order) as max_order FROM tasks WHERE user_id = ? AND project_id = ?')
-      .get(userId, projectId) as { max_order: number | null };
+      .get(targetUserId, projectId) as { max_order: number | null };
     const newOrder = (maxOrder.max_order ?? -1) + 1;
 
     const result = db.prepare(
       'INSERT INTO tasks (user_id, project_id, title, type, display_order) VALUES (?, ?, ?, ?, ?)'
-    ).run(userId, projectId, title, type, newOrder);
+    ).run(targetUserId, projectId, title, type, newOrder);
 
     return NextResponse.json(
       { message: 'Task created successfully', id: result.lastInsertRowid },

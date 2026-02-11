@@ -88,8 +88,9 @@ export async function POST(request: NextRequest) {
 
     const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
 
-    // Use the authenticated app user's email when setting assignment
-    const currentUserEmail = getUserEmail(userId);
+    // Use the task owner's email when setting assignment (supports release-planner user selection)
+    const assigneeUserId = task.user_id ?? userId;
+    const assignedUserEmail = getUserEmail(assigneeUserId);
 
     // Map local task type to Azure DevOps work item type
     const workItemType = task.type === 'bug' ? 'Bug' : 'Task';
@@ -103,12 +104,12 @@ export async function POST(request: NextRequest) {
       } as JsonPatchOperation,
     ];
 
-    // Add assigned to only when we have the current user's email
-    if (currentUserEmail) {
+    // Add assigned to only when we have the selected assignee's email
+    if (assignedUserEmail) {
       patchOperations.push({
         op: Operation.Add,
         path: '/fields/System.AssignedTo',
-        value: currentUserEmail
+        value: assignedUserEmail
       } as JsonPatchOperation);
     }
 

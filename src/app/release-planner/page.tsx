@@ -64,6 +64,32 @@ const CHILD_TASK_OPTIONS: Array<{
 
 const ACTIVE_RELEASE_STORAGE_KEY = "projectManager.releasePlanner.activeReleaseId";
 
+interface AppUser {
+  id: number;
+  name: string;
+  email?: string | null;
+}
+
+interface AppProject {
+  id: number;
+  member_user_ids?: number[];
+}
+
+interface ExistingChildTask {
+  id: number;
+  title: string;
+  type: string;
+  status?: string | null;
+  assignedTo?: string;
+}
+
+interface ChildCounts {
+  tasks: number;
+  bugs: number;
+}
+
+type ChildItemFilter = "task" | "bug";
+
 interface SortableRowProps {
   id: number;
   children: React.ReactNode;
@@ -131,10 +157,34 @@ export default function ReleaseTrackingPage() {
   const [showCreateChild, setShowCreateChild] = useState<{
     workItemId: number;
     workItemTitle: string;
+    workItemExternalId?: number | null;
   } | null>(null);
   const [childDisciplines, setChildDisciplines] = useState<Set<ChildDiscipline>>(
     () => new Set()
   );
+  const [projectUsers, setProjectUsers] = useState<AppUser[]>([]);
+  const [childUserByDiscipline, setChildUserByDiscipline] = useState<
+    Record<ChildDiscipline, string>
+  >({
+    backend: "",
+    frontend: "",
+    design: "",
+  });
+  const [existingChildTasks, setExistingChildTasks] = useState<ExistingChildTask[]>([]);
+  const [loadingExistingChildTasks, setLoadingExistingChildTasks] = useState(false);
+  const [existingChildTasksError, setExistingChildTasksError] = useState<string | null>(null);
+  const [childCountsByTitle, setChildCountsByTitle] = useState<
+    Record<string, ChildCounts>
+  >({});
+  const [loadingChildCounts, setLoadingChildCounts] = useState(false);
+  const [showChildItemsDialog, setShowChildItemsDialog] = useState<{
+    parentId: number;
+    title: string;
+    filter: ChildItemFilter;
+  } | null>(null);
+  const [childItemsDialogItems, setChildItemsDialogItems] = useState<ExistingChildTask[]>([]);
+  const [loadingChildItemsDialog, setLoadingChildItemsDialog] = useState(false);
+  const [childItemsDialogError, setChildItemsDialogError] = useState<string | null>(null);
   const [childSubmitting, setChildSubmitting] = useState(false);
 
   // Drag and drop sensors
@@ -217,6 +267,74 @@ export default function ReleaseTrackingPage() {
   }, []);
 
   useEffect(() => {
+    const getCookieValue = (key: string) => {
+      if (typeof document === "undefined") return "";
+      const parts = document.cookie.split(";").map((item) => item.trim());
+      const found = parts.find((part) => part.startsWith(`${key}=`));
+      return found ? decodeURIComponent(found.split("=").slice(1).join("=")) : "";
+    };
+
+    const loadProjectUsers = async () => {
+      try {
+        const [sessionResponse, projectsResponse, usersResponse] = await Promise.all([
+          fetch("/api/auth/session"),
+          fetch("/api/projects"),
+          fetch("/api/users"),
+        ]);
+
+        if (!projectsResponse.ok || !usersResponse.ok) {
+          return;
+        }
+
+        const projects = (await projectsResponse.json()) as AppProject[];
+        const users = (await usersResponse.json()) as AppUser[];
+
+        const cookieProjectId = getCookieValue("pm_project_id");
+        const activeProject =
+          projects.find((project) => String(project.id) === cookieProjectId) ??
+          projects[0];
+
+        const memberIds = new Set(activeProject?.member_user_ids ?? []);
+        const members = users.filter((user) => memberIds.has(user.id));
+        setProjectUsers(members);
+
+        const sessionData = sessionResponse.ok
+          ? ((await sessionResponse.json()) as { user?: { id: number } })
+          : null;
+        const sessionUserId = sessionData?.user?.id;
+
+        const defaultUserId =
+          members.find((member) => member.id === sessionUserId)?.id ??
+          members[0]?.id;
+
+        setChildUserByDiscipline((previous) => {
+          const fallback = defaultUserId ? String(defaultUserId) : "";
+          const next: Record<ChildDiscipline, string> = {
+            backend: previous.backend,
+            frontend: previous.frontend,
+            design: previous.design,
+          };
+
+          for (const discipline of ["backend", "frontend", "design"] as const) {
+            if (
+              !next[discipline] ||
+              !members.some((member) => String(member.id) === next[discipline])
+            ) {
+              next[discipline] = fallback;
+            }
+          }
+
+          return next;
+        });
+      } catch (err) {
+        console.error("Failed to load project users:", err);
+      }
+    };
+
+    loadProjectUsers();
+  }, []);
+
+  useEffect(() => {
     if (!activeReleaseId) {
       setWorkItems([]);
       return;
@@ -273,6 +391,64 @@ export default function ReleaseTrackingPage() {
       String(activeReleaseId)
     );
   }, [activeReleaseId]);
+
+  useEffect(() => {
+    if (!showCreateChild?.workItemExternalId) {
+      setExistingChildTasks([]);
+      setExistingChildTasksError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadExistingChildTasks = async () => {
+      setLoadingExistingChildTasks(true);
+      setExistingChildTasksError(null);
+      try {
+        const response = await fetch(
+          `/api/azure-devops/child-work-items?parentId=${showCreateChild.workItemExternalId}`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch existing child tasks");
+        }
+        const data = (await response.json()) as {
+          items?: Array<{
+            id: number;
+            title: string;
+            type: string;
+            state: string;
+            assignedTo?: string;
+          }>;
+        };
+        if (!cancelled) {
+          setExistingChildTasks(
+            (data.items ?? []).map((item) => ({
+              id: item.id,
+              title: item.title,
+              type: item.type,
+              status: item.state,
+              assignedTo: item.assignedTo,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setExistingChildTasksError("Failed to load child items from Azure DevOps");
+          setExistingChildTasks([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingExistingChildTasks(false);
+        }
+      }
+    };
+
+    loadExistingChildTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showCreateChild]);
   const loadWorkItemsForRelease = useCallback(async (releaseId: number) => {
     setWorkItemsLoading(true);
     try {
@@ -287,6 +463,51 @@ export default function ReleaseTrackingPage() {
       setWorkItemsLoading(false);
     }
   }, []);
+
+  const loadChildCounts = useCallback(async (titles: string[]) => {
+    const parentIds = Array.from(
+      new Set(
+        titles
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0)
+      )
+    );
+
+    if (parentIds.length === 0) {
+      setChildCountsByTitle({});
+      setLoadingChildCounts(false);
+      return;
+    }
+
+    setLoadingChildCounts(true);
+    try {
+      const response = await fetch("/api/azure-devops/child-work-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentIds }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch child counts");
+      }
+
+      const data = (await response.json()) as { counts?: Record<string, ChildCounts> };
+      setChildCountsByTitle(data.counts ?? {});
+    } catch (err) {
+      console.error("Failed to load child counts:", err);
+      setChildCountsByTitle({});
+    } finally {
+      setLoadingChildCounts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadChildCounts(
+      workItems
+        .filter((item) => item.external_source === "azure_devops" && item.external_id)
+        .map((item) => String(item.external_id))
+    );
+  }, [workItems, loadChildCounts]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -412,16 +633,24 @@ export default function ReleaseTrackingPage() {
       }
 
       const responses = await Promise.all(
-        selectedOptions.map((option) =>
-          fetch("/api/tasks", {
+        selectedOptions.map((option) => {
+          const selectedUserId = childUserByDiscipline[option.value];
+          const parsedUserId = Number(selectedUserId);
+
+          if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+            throw new Error(`Select a user for ${option.label}`);
+          }
+
+          return fetch("/api/tasks", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               title: `${option.prefix} ${showCreateChild.workItemTitle}`,
               type: "task",
+              userId: parsedUserId,
             }),
           })
-        )
+        })
       );
 
       const failedResponse = responses.find((response) => !response.ok);
@@ -439,7 +668,55 @@ export default function ReleaseTrackingPage() {
     } finally {
       setChildSubmitting(false);
     }
-  }, [childDisciplines, showCreateChild]);
+  }, [childDisciplines, childUserByDiscipline, showCreateChild]);
+
+  const loadChildItemsForDialog = useCallback(
+    async (parentId: number) => {
+      setLoadingChildItemsDialog(true);
+      setChildItemsDialogError(null);
+      setChildItemsDialogItems([]);
+      try {
+        const response = await fetch(
+          `/api/azure-devops/child-work-items?parentId=${parentId}`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch child items");
+        }
+        const data = (await response.json()) as {
+          items?: Array<{
+            id: number;
+            title: string;
+            type: string;
+            state: string;
+            assignedTo?: string;
+          }>;
+        };
+        setChildItemsDialogItems(
+          (data.items ?? []).map((item) => ({
+            id: item.id,
+            title: item.title,
+            type: item.type,
+            status: item.state,
+            assignedTo: item.assignedTo,
+          }))
+        );
+      } catch (err) {
+        console.error(err);
+        setChildItemsDialogError("Failed to load child items from Azure DevOps");
+      } finally {
+        setLoadingChildItemsDialog(false);
+      }
+    },
+    []
+  );
+
+  const handleOpenChildItemsDialog = useCallback(
+    (parentId: number, title: string, filter: ChildItemFilter) => {
+      setShowChildItemsDialog({ parentId, title, filter });
+      loadChildItemsForDialog(parentId);
+    },
+    [loadChildItemsForDialog]
+  );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -606,6 +883,17 @@ export default function ReleaseTrackingPage() {
 
                           const workItemUrl = getWorkItemUrl();
                           const itemState = item.state?.toLowerCase();
+                          const externalId = Number(item.external_id);
+                          const childCounts =
+                            Number.isInteger(externalId) && externalId > 0
+                              ? childCountsByTitle[String(externalId)] ?? {
+                                  tasks: 0,
+                                  bugs: 0,
+                                }
+                              : {
+                                  tasks: 0,
+                                  bugs: 0,
+                                };
 
                           const getRowClass = () => {
                             if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
@@ -672,6 +960,32 @@ export default function ReleaseTrackingPage() {
                                   >
                                     {item.state || "New"}
                                   </Badge>
+                                  {item.external_source === "azure_devops" && item.external_id && (
+                                    <>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                          handleOpenChildItemsDialog(externalId, item.title, "task");
+                                        }}
+                                      >
+                                        Tasks: {loadingChildCounts ? "?" : childCounts.tasks}
+                                      </Badge>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                          handleOpenChildItemsDialog(externalId, item.title, "bug");
+                                        }}
+                                      >
+                                        Bugs: {loadingChildCounts ? "?" : childCounts.bugs}
+                                      </Badge>
+                                    </>
+                                  )}
                                   <div className="truncate text-sm font-medium min-w-0" title={item.title}>
                                     {item.external_source === "azure_devops" && item.external_id ? (
                                       <button
@@ -733,9 +1047,20 @@ export default function ReleaseTrackingPage() {
                                     <DropdownMenuItem
                                       onClick={() => {
                                         setChildDisciplines(new Set());
+                                        const fallbackUserId = projectUsers[0]
+                                          ? String(projectUsers[0].id)
+                                          : "";
+                                        setChildUserByDiscipline((previous) => ({
+                                          backend: previous.backend || fallbackUserId,
+                                          frontend: previous.frontend || fallbackUserId,
+                                          design: previous.design || fallbackUserId,
+                                        }));
                                         setShowCreateChild({
                                           workItemId: item.id,
                                           workItemTitle: item.title,
+                                          workItemExternalId: item.external_id
+                                            ? Number(item.external_id)
+                                            : null,
                                         });
                                       }}
                                     >
@@ -781,50 +1106,121 @@ export default function ReleaseTrackingPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-[520px] min-w-0 max-h-[85vh] overflow-y-auto overflow-x-hidden">
+          <DialogHeader className="min-w-0">
             <DialogTitle>Create Child Task</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="break-words">
               Choose one or more disciplines for the child task. The title will be prefixed accordingly.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 min-w-0">
+            {showCreateChild?.workItemExternalId ? (
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">
+                  Existing DevOps child items (Parent #{showCreateChild.workItemExternalId})
+                </div>
+                {loadingExistingChildTasks ? (
+                  <p className="text-xs text-muted-foreground">Loading...</p>
+                ) : existingChildTasks.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No child tasks or bugs found in Azure DevOps.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {existingChildTasks.map((task) => (
+                      <div key={task.id} className="rounded border px-2 py-1 text-[11px]">
+                        <div className="font-medium break-words">{task.title}</div>
+                        <div className="text-muted-foreground">
+                          #{task.id} {task.type} - {task.status || "Unknown"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {existingChildTasksError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    {existingChildTasksError}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">
+                  This work item is not linked to Azure DevOps, so child items cannot be loaded.
+                </p>
+              </div>
+            )}
             {CHILD_TASK_OPTIONS.map((option) => {
               const isSelected = childDisciplines.has(option.value);
               const checkboxId = `release-child-discipline-${option.value}`;
+              const selectId = `release-child-user-${option.value}`;
               return (
-                <label
+                <div
                   key={option.value}
-                  htmlFor={checkboxId}
                   className={
-                    "flex items-start gap-3 rounded-md border p-3 transition-colors cursor-pointer" +
+                    "rounded-md border p-3 transition-colors min-w-0 overflow-x-hidden" +
                     (isSelected ? " bg-muted/60" : " hover:bg-muted/30")
                   }
                 >
-                  <Checkbox
-                    id={checkboxId}
-                    checked={isSelected}
-                    onCheckedChange={(checked) => {
-                      setChildDisciplines((prev) => {
-                        const next = new Set(prev);
-                        if (checked) {
-                          next.add(option.value);
-                        } else {
-                          next.delete(option.value);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                  <div className="space-y-1">
-                    <div className="text-sm font-medium">{option.label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {option.prefix} {showCreateChild?.workItemTitle}
+                  <label
+                    htmlFor={checkboxId}
+                    className="flex items-start gap-3 cursor-pointer min-w-0"
+                  >
+                    <Checkbox
+                      id={checkboxId}
+                      checked={isSelected}
+                      onCheckedChange={(checked) => {
+                        setChildDisciplines((prev) => {
+                          const next = new Set(prev);
+                          if (checked) {
+                            next.add(option.value);
+                          } else {
+                            next.delete(option.value);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="space-y-1 min-w-0">
+                      <div className="text-sm font-medium">{option.label}</div>
+                      <div className="text-xs text-muted-foreground break-words">
+                        {option.prefix} {showCreateChild?.workItemTitle}
+                      </div>
                     </div>
+                  </label>
+                  <div className="mt-3 space-y-2">
+                    <Label htmlFor={selectId} className="text-xs">
+                      Assign {option.label.toLowerCase()} task to
+                    </Label>
+                    <Select
+                      value={childUserByDiscipline[option.value]}
+                      onValueChange={(value) =>
+                        setChildUserByDiscipline((prev) => ({
+                          ...prev,
+                          [option.value]: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id={selectId} className="w-full min-w-0 max-w-full">
+                        <SelectValue placeholder="Select a user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectUsers.map((user) => (
+                          <SelectItem key={user.id} value={String(user.id)}>
+                            {user.name} {user.email ? `(${user.email})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </label>
+                </div>
               );
             })}
+            {projectUsers.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No project users available. Assign users in Settings before creating child tasks.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -841,7 +1237,7 @@ export default function ReleaseTrackingPage() {
             <Button
               type="button"
               onClick={handleCreateChildTask}
-              disabled={childDisciplines.size === 0 || childSubmitting}
+              disabled={childDisciplines.size === 0 || childSubmitting || projectUsers.length === 0}
             >
               {childSubmitting ? "Creating..." : "Create Child Task"}
             </Button>
@@ -903,6 +1299,74 @@ export default function ReleaseTrackingPage() {
                 Move
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {showChildItemsDialog && (
+        <Dialog
+          open={!!showChildItemsDialog}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowChildItemsDialog(null);
+              setChildItemsDialogItems([]);
+              setChildItemsDialogError(null);
+            }
+          }}
+        >
+          <DialogContent className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-[720px] max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Child {showChildItemsDialog.filter === "task" ? "Tasks" : "Bugs"}
+              </DialogTitle>
+              <DialogDescription>
+                Parent #{showChildItemsDialog.parentId}: {showChildItemsDialog.title}
+              </DialogDescription>
+            </DialogHeader>
+            {loadingChildItemsDialog ? (
+              <p className="text-sm text-muted-foreground">Loading child items...</p>
+            ) : childItemsDialogError ? (
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {childItemsDialogError}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {childItemsDialogItems
+                  .filter((childItem) =>
+                    showChildItemsDialog.filter === "task"
+                      ? childItem.type.toLowerCase() === "task"
+                      : childItem.type.toLowerCase() === "bug"
+                  )
+                  .map((childItem) => (
+                    <div
+                      key={childItem.id}
+                      className="rounded-md border p-3 flex items-start justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium break-words">
+                          #{childItem.id} {childItem.title}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {childItem.status || "Unknown"}
+                          {childItem.assignedTo ? ` | ${childItem.assignedTo}` : ""}
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-xs shrink-0">
+                        {childItem.type}
+                      </Badge>
+                    </div>
+                  ))}
+                {childItemsDialogItems.filter((childItem) =>
+                  showChildItemsDialog.filter === "task"
+                    ? childItem.type.toLowerCase() === "task"
+                    : childItem.type.toLowerCase() === "bug"
+                ).length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No {showChildItemsDialog.filter === "task" ? "tasks" : "bugs"} found.
+                  </p>
+                )}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       )}
