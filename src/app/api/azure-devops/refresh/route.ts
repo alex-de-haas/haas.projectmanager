@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
     const projectId = getRequestProjectId(request, userId);
     // Get Azure DevOps settings
     const settingRow = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
-      .get('azure_devops', userId, projectId) as Settings | undefined;
+      .prepare('SELECT id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?')
+      .get('azure_devops', projectId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(

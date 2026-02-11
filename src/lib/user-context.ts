@@ -60,18 +60,29 @@ const parseProjectId = (value: string | null | undefined): number | null => {
 };
 
 const ensureDefaultProjectForUser = (userId: number): number => {
-  const existing = db
-    .prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT 1")
+  const existingMembership = db
+    .prepare(`
+      SELECT p.id
+      FROM project_members pm
+      INNER JOIN projects p ON p.id = pm.project_id
+      WHERE pm.user_id = ?
+      ORDER BY p.created_at ASC, p.id ASC
+      LIMIT 1
+    `)
     .get(userId) as { id: number } | undefined;
 
-  if (existing) {
-    return existing.id;
+  if (existingMembership) {
+    return existingMembership.id;
   }
 
-  const inserted = db
+  const projectInserted = db
     .prepare("INSERT INTO projects (user_id, name) VALUES (?, ?)")
     .run(userId, DEFAULT_PROJECT_NAME);
-  return Number(inserted.lastInsertRowid);
+  const projectId = Number(projectInserted.lastInsertRowid);
+  db.prepare(
+    "INSERT OR IGNORE INTO project_members (project_id, user_id, added_by_user_id) VALUES (?, ?, ?)"
+  ).run(projectId, userId, userId);
+  return projectId;
 };
 
 const resolveKnownProjectId = (userId: number, candidateProjectId: number | null): number => {
@@ -82,7 +93,7 @@ const resolveKnownProjectId = (userId: number, candidateProjectId: number | null
   }
 
   const project = db
-    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?")
+    .prepare("SELECT project_id as id FROM project_members WHERE project_id = ? AND user_id = ?")
     .get(candidateProjectId, userId) as { id: number } | undefined;
 
   return project ? candidateProjectId : fallbackProjectId;

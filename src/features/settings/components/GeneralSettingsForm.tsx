@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
@@ -72,6 +73,7 @@ interface AppUser {
 interface AppProject {
   id: number;
   name: string;
+  member_user_ids?: number[];
 }
 
 interface CreatedUserResponse extends AppUser {
@@ -171,6 +173,8 @@ export function GeneralSettingsForm({
   const [updatingProject, setUpdatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [activeProjectId, setActiveProjectId] = useState("");
+  const [projectMemberUserIds, setProjectMemberUserIds] = useState<Set<number>>(new Set());
+  const [savingProjectMembers, setSavingProjectMembers] = useState(false);
   const [releases, setReleases] = useState<Release[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [releaseName, setReleaseName] = useState("");
@@ -322,6 +326,8 @@ export function GeneralSettingsForm({
           ? String(data[0].id)
           : "";
       setActiveProjectId(selectedId);
+      const selectedProject = data.find((project) => String(project.id) === selectedId);
+      setProjectMemberUserIds(new Set(selectedProject?.member_user_ids ?? []));
       if (selectedId && selectedId !== cookieProjectId) {
         setProjectCookie(selectedId);
       }
@@ -342,6 +348,13 @@ export function GeneralSettingsForm({
     // load* functions are intentionally run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const selected = projects.find((project) => String(project.id) === activeProjectId);
+    if (selected) {
+      setProjectMemberUserIds(new Set(selected.member_user_ids ?? []));
+    }
+  }, [projects, activeProjectId]);
 
   const loadBackups = async () => {
     setLoadingBackups(true);
@@ -685,8 +698,53 @@ export function GeneralSettingsForm({
 
   const handleSwitchProject = (projectId: string) => {
     setActiveProjectId(projectId);
+    const selectedProject = projects.find((item) => String(item.id) === projectId);
+    setProjectMemberUserIds(new Set(selectedProject?.member_user_ids ?? []));
     setProjectCookie(projectId);
     window.location.reload();
+  };
+
+  const toggleProjectMember = (userId: number, checked: boolean | "indeterminate") => {
+    setProjectMemberUserIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(userId);
+      } else {
+        next.delete(userId);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveProjectMembers = async () => {
+    const selected = projects.find((project) => String(project.id) === activeProjectId);
+    if (!selected) return;
+
+    setSavingProjectMembers(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selected.id,
+          memberUserIds: Array.from(projectMemberUserIds),
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as ApiError;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to save project members.");
+      }
+
+      await loadProjects();
+      setMessage("Project members saved.");
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to save project members.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setSavingProjectMembers(false);
+    }
   };
 
   const handleCreateRelease = async () => {
@@ -1347,7 +1405,7 @@ export function GeneralSettingsForm({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Switching project refreshes the app and scopes tasks, releases, day-offs, and settings.
+              Switching project refreshes the app and scopes time tracking, release planner, and DevOps settings.
             </p>
           </div>
 
@@ -1386,6 +1444,43 @@ export function GeneralSettingsForm({
               disabled={!activeProjectId || projects.length <= 1 || updatingProject || creatingProject}
             >
               Delete project
+            </Button>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <Label>Assigned Users</Label>
+            <p className="text-xs text-muted-foreground">
+              Assigned users can access this project&apos;s Release Planner and Azure DevOps settings.
+            </p>
+            {loadingUsers ? (
+              <p className="text-sm text-muted-foreground">Loading users...</p>
+            ) : users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No users available.</p>
+            ) : (
+              <div className="space-y-2">
+                {users.map((user) => (
+                  <label
+                    key={`project-member-${user.id}`}
+                    className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+                  >
+                    <Checkbox
+                      checked={projectMemberUserIds.has(user.id)}
+                      onCheckedChange={(checked) => toggleProjectMember(user.id, checked)}
+                      disabled={!activeProjectId || updatingProject || savingProjectMembers}
+                    />
+                    <span className="text-sm">{user.name}</span>
+                    <span className="text-xs text-muted-foreground">{user.email || "No email"}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSaveProjectMembers}
+              disabled={!activeProjectId || loadingUsers || savingProjectMembers || updatingProject}
+            >
+              {savingProjectMembers ? "Saving..." : "Save assignments"}
             </Button>
           </div>
         </TabsContent>

@@ -142,6 +142,7 @@ export interface Project {
   id: number;
   user_id?: number;
   name: string;
+  member_user_ids?: number[];
   created_at: Date;
   updated_at: Date;
 }

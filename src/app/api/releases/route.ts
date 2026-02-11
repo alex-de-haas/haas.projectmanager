@@ -8,8 +8,8 @@ export async function GET(request: NextRequest) {
     const userId = getRequestUserId(request);
     const projectId = getRequestProjectId(request, userId);
     const releases = db
-      .prepare("SELECT * FROM releases WHERE user_id = ? AND project_id = ? ORDER BY COALESCE(display_order, 999999) ASC, created_at ASC")
-      .all(userId, projectId) as Release[];
+      .prepare("SELECT * FROM releases WHERE project_id = ? ORDER BY COALESCE(display_order, 999999) ASC, created_at ASC")
+      .all(projectId) as Release[];
     return NextResponse.json(releases);
   } catch (error) {
     console.error("Database error:", error);
@@ -46,9 +46,9 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      "SELECT MAX(display_order) as max_order FROM releases WHERE user_id = ? AND project_id = ?"
+      "SELECT MAX(display_order) as max_order FROM releases WHERE project_id = ?"
     );
-    const currentMax = stmt.get(userId, projectId) as { max_order: number | null };
+    const currentMax = stmt.get(projectId) as { max_order: number | null };
     const nextOrder = (currentMax.max_order ?? -1) + 1;
 
     const insertStmt = db.prepare(
@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
     const result = insertStmt.run(userId, projectId, name.trim(), start_date, end_date, nextOrder);
 
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
-      .get(result.lastInsertRowid, userId, projectId) as Release;
+      .prepare("SELECT * FROM releases WHERE id = ? AND project_id = ?")
+      .get(result.lastInsertRowid, projectId) as Release;
 
     return NextResponse.json(release, { status: 201 });
   } catch (error) {
@@ -130,8 +130,8 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    values.push(releaseId, userId, projectId);
-    const stmt = db.prepare(`UPDATE releases SET ${updates.join(", ")} WHERE id = ? AND user_id = ? AND project_id = ?`);
+    values.push(releaseId, projectId);
+    const stmt = db.prepare(`UPDATE releases SET ${updates.join(", ")} WHERE id = ? AND project_id = ?`);
     const result = stmt.run(...values);
 
     if (result.changes === 0) {
@@ -139,8 +139,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
-      .get(releaseId, userId, projectId) as Release;
+      .prepare("SELECT * FROM releases WHERE id = ? AND project_id = ?")
+      .get(releaseId, projectId) as Release;
 
     return NextResponse.json(release);
   } catch (error) {
@@ -174,8 +174,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare("DELETE FROM releases WHERE id = ? AND user_id = ? AND project_id = ?");
-    const result = stmt.run(id, userId, projectId);
+    const stmt = db.prepare("DELETE FROM releases WHERE id = ? AND project_id = ?");
+    const result = stmt.run(id, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });

@@ -69,6 +69,29 @@ const initDb = () => {
       UNIQUE(user_id, name)
     );
 
+    CREATE TABLE IF NOT EXISTS project_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      added_by_user_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (added_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(project_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS project_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, key)
+    );
+
     CREATE TABLE IF NOT EXISTS user_invitations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -210,6 +233,9 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_checklist_order ON checklist_items(task_id, display_order);
     CREATE INDEX IF NOT EXISTS idx_user_invitations_user_id ON user_invitations(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_invitations_expires_at ON user_invitations(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON project_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_project_settings_project_key ON project_settings(project_id, key);
   `);
 
   const ensureUserColumn = (tableName: string) => {
@@ -272,6 +298,15 @@ const initDb = () => {
   }
 
   try {
+    db.exec(`
+      INSERT OR IGNORE INTO project_members (project_id, user_id, added_by_user_id)
+      SELECT id, user_id, user_id FROM projects
+    `);
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
     const projectScopedTables = [
       "tasks",
       "settings",
@@ -299,6 +334,32 @@ const initDb = () => {
              WHERE p2.user_id = ${table}.user_id
            )
       `);
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    const azureRows = db.prepare(`
+      SELECT project_id, value
+      FROM settings
+      WHERE key = 'azure_devops'
+      ORDER BY updated_at DESC, id DESC
+    `).all() as Array<{ project_id: number; value: string }>;
+
+    const seen = new Set<number>();
+    const upsert = db.prepare(`
+      INSERT INTO project_settings (project_id, key, value, updated_at)
+      VALUES (?, 'azure_devops', ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(project_id, key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+
+    for (const row of azureRows) {
+      if (seen.has(row.project_id)) continue;
+      seen.add(row.project_id);
+      upsert.run(row.project_id, row.value);
     }
   } catch (error) {
     console.error("Migration error:", error);

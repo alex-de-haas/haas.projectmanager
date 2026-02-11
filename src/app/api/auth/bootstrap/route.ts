@@ -61,6 +61,9 @@ export async function POST(request: NextRequest) {
         .prepare("INSERT INTO projects (user_id, name, updated_at) VALUES (?, 'Default', CURRENT_TIMESTAMP)")
         .run(user.id);
       const defaultProjectId = Number(projectResult.lastInsertRowid);
+      db.prepare(
+        "INSERT OR IGNORE INTO project_members (project_id, user_id, added_by_user_id) VALUES (?, ?, ?)"
+      ).run(defaultProjectId, user.id, user.id);
 
       db.prepare("INSERT OR IGNORE INTO settings (user_id, project_id, key, value) VALUES (?, ?, ?, ?)")
         .run(user.id, defaultProjectId, "default_day_length", "8");

@@ -35,6 +35,7 @@ interface AppUser {
 interface AppProject {
   id: number;
   name: string;
+  member_user_ids?: number[];
 }
 
 const getProjectInitials = (name?: string): string => {

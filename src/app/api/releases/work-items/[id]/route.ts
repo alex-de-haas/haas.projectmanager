@@ -37,8 +37,8 @@ export async function PATCH(
 
     // Check if the work item exists
     const workItem = db
-      .prepare("SELECT * FROM release_work_items WHERE id = ? AND user_id = ? AND project_id = ?")
-      .get(id, userId, projectId);
+      .prepare("SELECT * FROM release_work_items WHERE id = ? AND project_id = ?")
+      .get(id, projectId);
 
     if (!workItem) {
       return NextResponse.json(
@@ -49,8 +49,8 @@ export async function PATCH(
 
     // Check if the target release exists
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
-      .get(releaseId, userId, projectId) as { id: number; status?: string } | undefined;
+      .prepare("SELECT * FROM releases WHERE id = ? AND project_id = ?")
+      .get(releaseId, projectId) as { id: number; status?: string } | undefined;
 
     if (!release) {
       return NextResponse.json(
@@ -69,17 +69,17 @@ export async function PATCH(
     // Get the maximum display_order for the target release
     const maxOrderResult = db
       .prepare(
-        "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND user_id = ? AND project_id = ?"
+        "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND project_id = ?"
       )
-      .get(releaseId, userId, projectId) as { max_order: number | null };
+      .get(releaseId, projectId) as { max_order: number | null };
 
     const nextOrder = (maxOrderResult.max_order ?? -1) + 1;
 
     // Update the work item with the new release_id and display_order
     const stmt = db.prepare(
-      "UPDATE release_work_items SET release_id = ?, display_order = ? WHERE id = ? AND user_id = ? AND project_id = ?"
+      "UPDATE release_work_items SET release_id = ?, display_order = ? WHERE id = ? AND project_id = ?"
     );
-    const result = stmt.run(releaseId, nextOrder, id, userId, projectId);
+    const result = stmt.run(releaseId, nextOrder, id, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json(

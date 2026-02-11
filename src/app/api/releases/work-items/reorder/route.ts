@@ -17,11 +17,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Update display_order for each work item in a transaction
-    const updateStmt = db.prepare('UPDATE release_work_items SET display_order = ? WHERE id = ? AND user_id = ? AND project_id = ?');
+    const updateStmt = db.prepare('UPDATE release_work_items SET display_order = ? WHERE id = ? AND project_id = ?');
     
     const transaction = db.transaction((orders: Array<{ id: number; order: number }>) => {
       for (const { id, order } of orders) {
-        updateStmt.run(order, id, userId, projectId);
+        updateStmt.run(order, id, projectId);
       }
     });
 

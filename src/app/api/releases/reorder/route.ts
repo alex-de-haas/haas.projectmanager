@@ -19,13 +19,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updateStmt = db.prepare(
-      "UPDATE releases SET display_order = ? WHERE id = ? AND user_id = ? AND project_id = ?"
+      "UPDATE releases SET display_order = ? WHERE id = ? AND project_id = ?"
     );
 
     const transaction = db.transaction(
       (orders: Array<{ id: number; order: number }>) => {
         for (const { id, order } of orders) {
-          updateStmt.run(order, id, userId, projectId);
+          updateStmt.run(order, id, projectId);
         }
       }
     );

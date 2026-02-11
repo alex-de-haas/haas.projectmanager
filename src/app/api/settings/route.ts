@@ -11,9 +11,13 @@ export async function GET(request: NextRequest) {
     const key = searchParams.get('key');
 
     if (key) {
-      const setting = db
-        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
-        .get(key, userId, projectId) as Settings | undefined;
+      const setting = key === "azure_devops"
+        ? (db
+            .prepare("SELECT id, ? as user_id, project_id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?")
+            .get(userId, key, projectId) as Settings | undefined)
+        : (db
+            .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+            .get(key, userId, projectId) as Settings | undefined);
       
       if (!setting) {
         return NextResponse.json({ error: 'Setting not found' }, { status: 404 });
@@ -74,19 +78,32 @@ export async function POST(request: NextRequest) {
     const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
 
     // Upsert setting
-    const stmt = db.prepare(`
-      INSERT INTO settings (user_id, project_id, key, value, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(user_id, project_id, key) DO UPDATE SET
-        value = excluded.value,
-        updated_at = CURRENT_TIMESTAMP
-    `);
+    if (key === "azure_devops") {
+      db.prepare(`
+        INSERT INTO project_settings (project_id, key, value, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id, key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(projectId, key, stringValue);
+    } else {
+      const stmt = db.prepare(`
+        INSERT INTO settings (user_id, project_id, key, value, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, project_id, key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = CURRENT_TIMESTAMP
+      `);
+      stmt.run(userId, projectId, key, stringValue);
+    }
 
-    stmt.run(userId, projectId, key, stringValue);
-
-    const setting = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
-      .get(key, userId, projectId) as Settings;
+    const setting = key === "azure_devops"
+      ? (db
+          .prepare("SELECT id, ? as user_id, project_id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?")
+          .get(userId, key, projectId) as Settings)
+      : (db
+          .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+          .get(key, userId, projectId) as Settings);
 
     return NextResponse.json(setting);
   } catch (error) {
@@ -112,8 +129,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare('DELETE FROM settings WHERE key = ? AND user_id = ? AND project_id = ?');
-    const result = stmt.run(key, userId, projectId);
+    const result = key === "azure_devops"
+      ? db.prepare("DELETE FROM project_settings WHERE key = ? AND project_id = ?").run(key, projectId)
+      : db.prepare('DELETE FROM settings WHERE key = ? AND user_id = ? AND project_id = ?').run(key, userId, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json({ error: 'Setting not found' }, { status: 404 });

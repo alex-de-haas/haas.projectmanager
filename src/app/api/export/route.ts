@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
     let azureSettings: AzureDevOpsSettings | null = null;
     try {
       const setting = db
-        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
-        .get('azure_devops', userId, projectId) as Settings | undefined;
+        .prepare('SELECT id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?')
+        .get('azure_devops', projectId) as Settings | undefined;
       if (setting) {
         azureSettings = JSON.parse(setting.value) as AzureDevOpsSettings;
       }

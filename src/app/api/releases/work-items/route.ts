@@ -27,9 +27,9 @@ export async function GET(request: NextRequest) {
 
     const items = db
       .prepare(
-        "SELECT * FROM release_work_items WHERE release_id = ? AND user_id = ? AND project_id = ? ORDER BY display_order ASC, created_at DESC"
+        "SELECT * FROM release_work_items WHERE release_id = ? AND project_id = ? ORDER BY display_order ASC, created_at DESC"
       )
-      .all(releaseId, userId, projectId) as ReleaseWorkItem[];
+      .all(releaseId, projectId) as ReleaseWorkItem[];
 
     return NextResponse.json(items);
   } catch (error) {
@@ -63,8 +63,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare("DELETE FROM release_work_items WHERE id = ? AND user_id = ? AND project_id = ?");
-    const result = stmt.run(id, userId, projectId);
+    const stmt = db.prepare("DELETE FROM release_work_items WHERE id = ? AND project_id = ?");
+    const result = stmt.run(id, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json(

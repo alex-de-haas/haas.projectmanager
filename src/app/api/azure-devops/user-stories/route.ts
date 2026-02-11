@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     }
 
     const settingRow = db
-      .prepare("SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?")
-      .get("azure_devops", userId, projectId) as Settings | undefined;
+      .prepare("SELECT id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?")
+      .get("azure_devops", projectId) as Settings | undefined;
 
     if (!settingRow) {
       return NextResponse.json(
@@ -145,13 +145,12 @@ export async function GET(request: NextRequest) {
           SELECT external_id
           FROM release_work_items
           WHERE release_id = ?
-            AND user_id = ?
             AND project_id = ?
             AND external_source = 'azure_devops'
             AND external_id IS NOT NULL
         `
         )
-        .all(releaseId, userId, projectId) as Array<{ external_id: string | number | null }>;
+        .all(releaseId, projectId) as Array<{ external_id: string | number | null }>;
 
       importedRows.forEach((row) => {
         const numericId = Number(row.external_id);

@@ -33,16 +33,16 @@ export async function POST(request: NextRequest) {
     }
 
     const release = db
-      .prepare("SELECT id FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
-      .get(releaseId, userId, projectId) as { id: number } | undefined;
+      .prepare("SELECT id FROM releases WHERE id = ? AND project_id = ?")
+      .get(releaseId, projectId) as { id: number } | undefined;
 
     if (!release) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });
     }
 
     const settingRow = db
-      .prepare("SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?")
-      .get("azure_devops", userId, projectId) as Settings | undefined;
+      .prepare("SELECT id, key, value, created_at, updated_at FROM project_settings WHERE key = ? AND project_id = ?")
+      .get("azure_devops", projectId) as Settings | undefined;
 
     if (!settingRow) {
       return NextResponse.json(
@@ -98,9 +98,9 @@ export async function POST(request: NextRequest) {
 
       const existing = db
         .prepare(
-          "SELECT id FROM release_work_items WHERE release_id = ? AND external_id = ? AND external_source = 'azure_devops' AND user_id = ? AND project_id = ?"
+          "SELECT id FROM release_work_items WHERE release_id = ? AND external_id = ? AND external_source = 'azure_devops' AND project_id = ?"
         )
-        .get(releaseId, workItem.id, userId, projectId) as { id: number } | undefined;
+        .get(releaseId, workItem.id, projectId) as { id: number } | undefined;
 
       if (existing) {
         skipped.push({ id: workItem.id, reason: "Already added" });
@@ -117,8 +117,8 @@ export async function POST(request: NextRequest) {
 
       // Get the max display_order for this release
       const maxOrderRow = db
-        .prepare("SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND user_id = ? AND project_id = ?")
-        .get(releaseId, userId, projectId) as { max_order: number | null } | undefined;
+        .prepare("SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND project_id = ?")
+        .get(releaseId, projectId) as { max_order: number | null } | undefined;
       const nextOrder = (maxOrderRow?.max_order ?? -1) + 1;
 
       const stmt = db.prepare(
@@ -132,8 +132,8 @@ export async function POST(request: NextRequest) {
 
       const result = stmt.run(userId, projectId, releaseId, title, workItem.id, workItemType, state, tagsString, nextOrder);
       const newItem = db
-        .prepare("SELECT * FROM release_work_items WHERE id = ? AND user_id = ? AND project_id = ?")
-        .get(result.lastInsertRowid, userId, projectId) as ReleaseWorkItem;
+        .prepare("SELECT * FROM release_work_items WHERE id = ? AND project_id = ?")
+        .get(result.lastInsertRowid, projectId) as ReleaseWorkItem;
       imported.push(newItem);
     }
 
