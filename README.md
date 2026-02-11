@@ -43,10 +43,10 @@ The database file (`data/time_tracker.db`) will be created automatically on firs
 
 ### 4. Sign In
 
-The app now uses email/password authentication.
+The app uses email/password authentication.
 
-- Default user email: `a.zayats@sam-solutions.com`
-- Default temporary password: `TempP@ssword`
+- On a brand-new database (no users), the `/login` page shows a first-time setup form.
+- Create the first user account there, then you will be signed in automatically.
 
 You will be redirected to `/login` before accessing application pages.
 

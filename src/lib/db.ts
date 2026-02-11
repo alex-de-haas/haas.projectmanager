@@ -1,7 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { hashPassword } from '@/lib/password';
 
 const dataDirPath = path.join(process.cwd(), 'data');
 const dbPath = path.join(dataDirPath, 'time_tracker.db');
@@ -175,12 +174,6 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
     CREATE INDEX IF NOT EXISTS idx_checklist_order ON checklist_items(task_id, display_order);
   `);
-
-  try {
-    db.prepare("INSERT OR IGNORE INTO users (id, name) VALUES (1, 'Default User')").run();
-  } catch (error) {
-    console.error('Migration error:', error);
-  }
 
   const ensureUserColumn = (tableName: string) => {
     const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
@@ -437,41 +430,6 @@ const initDb = () => {
     console.error('Migration error:', error);
   }
 
-  // Insert default settings if they don't exist
-  try {
-    const defaultDayLengthSetting = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('default_day_length', 1);
-    if (!defaultDayLengthSetting) {
-      console.log('Creating default_day_length setting...');
-      db
-        .prepare('INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)')
-        .run(1, 'default_day_length', '8');
-      console.log('Default day length setting created (8 hours)');
-    }
-  } catch (error) {
-    console.error('Error creating default settings:', error);
-  }
-
-  // Seed default credentials once for existing user
-  try {
-    const authSeeded = db
-      .prepare('SELECT id FROM settings WHERE user_id = ? AND key = ?')
-      .get(1, 'auth_seeded_v1') as { id: number } | undefined;
-
-    if (!authSeeded) {
-      const tempPasswordHash = hashPassword('TempP@ssword');
-      db.prepare(
-        'UPDATE users SET email = ?, password_hash = ? WHERE id = ?'
-      ).run('a.zayats@sam-solutions.com', tempPasswordHash, 1);
-
-      db.prepare(
-        'INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, ?, ?)'
-      ).run(1, 'auth_seeded_v1', '1');
-    }
-  } catch (error) {
-    console.error('Error seeding auth credentials:', error);
-  }
 };
 
 // Initialize on first import

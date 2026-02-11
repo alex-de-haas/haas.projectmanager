@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_COOKIE_NAME = "pm_auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/session", "/api/auth/bootstrap"];
 
 const isPublicPath = (pathname: string) => {
   if (PUBLIC_PATHS.includes(pathname)) return true;
