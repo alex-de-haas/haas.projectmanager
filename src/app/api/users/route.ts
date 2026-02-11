@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import type { User } from "@/types";
-import { generateRandomPassword, hashPassword } from "@/lib/password";
-import { sendNewUserCredentialsEmail } from "@/lib/email";
+import { createInvitationToken, hashInvitationToken, INVITATION_EXPIRY_SECONDS } from "@/lib/invitations";
 
 const parseUserId = (value: string | null): number | null => {
   if (!value) return null;
@@ -58,35 +57,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 });
     }
 
-    const generatedPassword = generateRandomPassword();
-    const passwordHash = hashPassword(generatedPassword);
+    const invitationToken = createInvitationToken();
+    const invitationTokenHash = hashInvitationToken(invitationToken);
+    const expiresAtSeconds = Math.floor(Date.now() / 1000) + INVITATION_EXPIRY_SECONDS;
 
-    const result = db
-      .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)")
-      .run(name, email, passwordHash);
-    const user = db
-      .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
-      .get(result.lastInsertRowid) as User;
+    const createUserWithInvitation = db.transaction(() => {
+      const result = db
+        .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, NULL)")
+        .run(name, email);
+      const user = db
+        .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
+        .get(result.lastInsertRowid) as User;
 
-    db.prepare(
-      "INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)"
-    ).run(user.id, "default_day_length", "8");
+      db.prepare(
+        "INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)"
+      ).run(user.id, "default_day_length", "8");
 
-    try {
-      sendNewUserCredentialsEmail({
-        to: email,
-        name: user.name,
-        password: generatedPassword,
-      });
-    } catch {
-      db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
-      return NextResponse.json(
-        { error: "User created, but failed to send credentials email. Creation rolled back." },
-        { status: 500 }
-      );
-    }
+      db.prepare("DELETE FROM user_invitations WHERE user_id = ?").run(user.id);
+      db.prepare("INSERT INTO user_invitations (user_id, token_hash, expires_at) VALUES (?, ?, ?)")
+        .run(user.id, invitationTokenHash, expiresAtSeconds);
+      return user;
+    });
 
-    return NextResponse.json(user, { status: 201 });
+    const user = createUserWithInvitation();
+
+    const inviteLink = `${request.nextUrl.origin}/invite?token=${encodeURIComponent(invitationToken)}`;
+    return NextResponse.json(
+      {
+        ...user,
+        invitation_link: inviteLink,
+        invitation_expires_at: new Date(expiresAtSeconds * 1000).toISOString(),
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Database error:", error);
     return NextResponse.json({ error: "Failed to create user" }, { status: 500 });

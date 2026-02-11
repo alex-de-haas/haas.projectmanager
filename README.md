@@ -206,9 +206,9 @@ You can:
 ## License
 
 MIT
-### User Creation Credentials Email
+### User Invitations
 
-When creating a user, you must provide an email address. A temporary password is generated automatically and sent via local `sendmail`.
+When creating a user, you must provide an email address. The app generates a one-time invitation link. Share that link with the user so they can set their own password.
 
-- Sender address can be customized with `SMTP_FROM` env var
-- This requires `/usr/sbin/sendmail` to be available and configured on the host
+- Invitation links expire after 7 days
+- Accepting the link activates the account and signs the user in

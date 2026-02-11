@@ -58,6 +58,16 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS user_invitations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
@@ -173,6 +183,8 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_blocker_resolved ON blockers(is_resolved);
     CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
     CREATE INDEX IF NOT EXISTS idx_checklist_order ON checklist_items(task_id, display_order);
+    CREATE INDEX IF NOT EXISTS idx_user_invitations_user_id ON user_invitations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_invitations_expires_at ON user_invitations(expires_at);
   `);
 
   const ensureUserColumn = (tableName: string) => {
@@ -426,6 +438,15 @@ const initDb = () => {
 
       console.log('Display order column added to releases and initialized successfully');
     }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: remove expired invitation rows
+  try {
+    db.prepare(
+      "DELETE FROM user_invitations WHERE expires_at <= CAST(strftime('%s', 'now') AS INTEGER) OR used_at IS NOT NULL"
+    ).run();
   } catch (error) {
     console.error('Migration error:', error);
   }

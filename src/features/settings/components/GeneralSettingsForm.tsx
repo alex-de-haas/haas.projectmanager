@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Release } from "@/types";
-import { CheckCircle2, GripVertical, Plus, Trash2, UserPen } from "lucide-react";
+import { CheckCircle2, GripVertical, MoreHorizontal, Plus, Trash2, UserPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,12 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -60,6 +66,10 @@ interface AppUser {
   name: string;
   email?: string | null;
   created_at?: string;
+}
+
+interface CreatedUserResponse extends AppUser {
+  invitation_link?: string;
 }
 
 interface ApiError {
@@ -190,6 +200,7 @@ export function GeneralSettingsForm({
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserName, setNewUserName] = useState("");
+  const [lastInvitationLink, setLastInvitationLink] = useState("");
   const [showRenameUser, setShowRenameUser] = useState(false);
   const [renameUserName, setRenameUserName] = useState("");
 
@@ -378,10 +389,12 @@ export function GeneralSettingsForm({
     if (!trimmedEmail) {
       setMessage("Email is required.");
       setMessageType("error");
+      setLastInvitationLink("");
       return;
     }
 
     setCreatingUser(true);
+    setLastInvitationLink("");
     try {
       const response = await fetch("/api/users", {
         method: "POST",
@@ -393,18 +406,21 @@ export function GeneralSettingsForm({
         const data = (await response.json().catch(() => ({}))) as ApiError;
         setMessage(data.error || "Failed to create user.");
         setMessageType("error");
+        setLastInvitationLink("");
         return;
       }
 
-      const created = (await response.json()) as AppUser;
+      const created = (await response.json()) as CreatedUserResponse;
       setUsers((prev) => [...prev, created]);
       setShowCreateUser(false);
       resetCreateUserDialog();
-      setMessage(`Created user "${created.name}". Credentials were sent to ${created.email ?? trimmedEmail}.`);
+      setMessage(`Created user "${created.name}". Share the invitation link to let them set a password.`);
       setMessageType("success");
+      setLastInvitationLink(created.invitation_link ?? "");
     } catch (err) {
       setMessage("Failed to create user.");
       setMessageType("error");
+      setLastInvitationLink("");
     } finally {
       setCreatingUser(false);
     }
@@ -453,18 +469,17 @@ export function GeneralSettingsForm({
     setShowRenameUser(true);
   };
 
-  const handleDeleteUser = async () => {
-    const selected = users.find((user) => String(user.id) === activeUserId);
-    if (!selected || users.length <= 1) return;
+  const handleDeleteUser = async (targetUser: AppUser) => {
+    if (users.length <= 1) return;
 
     const confirmed = window.confirm(
-      `Delete user "${selected.name}" and all associated data?`
+      `Delete user "${targetUser.name}" and all associated data?`
     );
     if (!confirmed) return;
 
     setUpdatingUser(true);
     try {
-      const response = await fetch(`/api/users?id=${selected.id}`, {
+      const response = await fetch(`/api/users?id=${targetUser.id}`, {
         method: "DELETE",
       });
 
@@ -475,10 +490,10 @@ export function GeneralSettingsForm({
         return;
       }
 
-      const nextUsers = users.filter((user) => user.id !== selected.id);
+      const nextUsers = users.filter((user) => user.id !== targetUser.id);
       setUsers(nextUsers);
       await loadUsers();
-      setMessage(`Removed user "${selected.name}".`);
+      setMessage(`Removed user "${targetUser.name}".`);
       setMessageType("success");
     } catch (err) {
       setMessage("Failed to delete user.");
@@ -1038,9 +1053,33 @@ export function GeneralSettingsForm({
                           {user.email || "No email"}
                         </p>
                       </div>
-                      <p className="shrink-0 text-xs text-muted-foreground">
-                        Created: {createdAt}
-                      </p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className="text-xs text-muted-foreground">Created: {createdAt}</p>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={`Actions for ${user.name}`}
+                              disabled={updatingUser}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => void handleDeleteUser(user)}
+                              disabled={users.length <= 1 || updatingUser}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove user
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   );
                 })
@@ -1068,16 +1107,6 @@ export function GeneralSettingsForm({
             >
               <UserPen className="h-4 w-4" />
               Rename User
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleDeleteUser}
-              disabled={!activeUserId || users.length <= 1 || creatingUser || updatingUser || loadingUsers}
-              className="gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Remove User
             </Button>
             <Button
               type="button"
@@ -1362,11 +1391,38 @@ export function GeneralSettingsForm({
           variant={messageType === "success" ? "default" : "destructive"}
           className={
             messageType === "success"
-              ? "bg-green-50 border-green-200 mt-4"
+              ? "mt-4 border-green-300 bg-green-50 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100"
               : "mt-4"
           }
         >
-          <AlertDescription>{message}</AlertDescription>
+          <AlertDescription>
+            <div>{message}</div>
+            {lastInvitationLink && (message.startsWith("Created user") || message.startsWith("Invitation link copied")) ? (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-green-300/70 bg-background/80 p-2 dark:border-green-700">
+                <Input
+                  value={lastInvitationLink}
+                  readOnly
+                  className="font-mono text-xs text-foreground"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(lastInvitationLink);
+                      setMessage("Invitation link copied to clipboard.");
+                      setMessageType("success");
+                    } catch {
+                      setMessage("Failed to copy invitation link.");
+                      setMessageType("error");
+                    }
+                  }}
+                >
+                  Copy Link
+                </Button>
+              </div>
+            ) : null}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -1383,7 +1439,7 @@ export function GeneralSettingsForm({
           <DialogHeader>
             <DialogTitle>Create User</DialogTitle>
             <DialogDescription>
-              Enter email and optional display name. Temporary password will be sent by email.
+              Enter email and optional display name. You will get an invitation link to share with the user.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
