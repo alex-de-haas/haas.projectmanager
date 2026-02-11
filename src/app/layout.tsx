@@ -7,6 +7,10 @@ import Sidebar from "@/components/Sidebar";
 export const metadata: Metadata = {
   title: "Time Tracker",
   description: "Track time spent on tasks and bugs",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
