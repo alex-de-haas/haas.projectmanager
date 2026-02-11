@@ -11,6 +11,13 @@ interface ExportRequest {
   parentWorkItemId?: number;
 }
 
+const getUserEmail = (userId: number): string | null => {
+  const user = db
+    .prepare('SELECT email FROM users WHERE id = ?')
+    .get(userId) as { email?: string | null } | undefined;
+  return user?.email?.trim() || null;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
@@ -81,9 +88,8 @@ export async function POST(request: NextRequest) {
 
     const witApi: WorkItemTrackingApi = await connection.getWorkItemTrackingApi();
 
-    // Get the current user's identity (unique name / email)
-    const connectionData = await connection.connect();
-    const currentUserUniqueName = connectionData.authenticatedUser?.providerDisplayName;
+    // Use the authenticated app user's email when setting assignment
+    const currentUserEmail = getUserEmail(userId);
 
     // Map local task type to Azure DevOps work item type
     const workItemType = task.type === 'bug' ? 'Bug' : 'Task';
@@ -97,12 +103,12 @@ export async function POST(request: NextRequest) {
       } as JsonPatchOperation,
     ];
 
-    // Add assigned to if we have the current user info
-    if (currentUserUniqueName) {
+    // Add assigned to only when we have the current user's email
+    if (currentUserEmail) {
       patchOperations.push({
         op: Operation.Add,
         path: '/fields/System.AssignedTo',
-        value: currentUserUniqueName
+        value: currentUserEmail
       } as JsonPatchOperation);
     }
 

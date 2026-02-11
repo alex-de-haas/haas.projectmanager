@@ -138,7 +138,7 @@ export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOps
         <DialogHeader>
           <DialogTitle>Export to Azure DevOps</DialogTitle>
           <DialogDescription>
-            Export &quot;{task.title}&quot; to Azure DevOps. The work item will be assigned to you (@Me).
+            Export &quot;{task.title}&quot; to Azure DevOps. When assignment is set, it uses your current user email.
             Optionally select a parent work item.
           </DialogDescription>
         </DialogHeader>

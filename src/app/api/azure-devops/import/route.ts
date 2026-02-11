@@ -11,11 +11,28 @@ interface ImportRequest {
   assignedToMe?: boolean;
 }
 
+const getUserEmail = (userId: number): string | null => {
+  const user = db
+    .prepare('SELECT email FROM users WHERE id = ?')
+    .get(userId) as { email?: string | null } | undefined;
+  return user?.email?.trim() || null;
+};
+
+const escapeWiqlString = (value: string): string => value.replace(/'/g, "''");
+
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
     const projectId = getRequestProjectId(request, userId);
     const body: ImportRequest = await request.json();
+    const userEmail = getUserEmail(userId);
+
+    if (!userEmail) {
+      return NextResponse.json(
+        { error: 'Current user email is required to import assigned work items.' },
+        { status: 400 }
+      );
+    }
 
     // Get Azure DevOps settings
     const settingRow = db
@@ -59,12 +76,13 @@ export async function POST(request: NextRequest) {
     if (body.workItemIds && body.workItemIds.length > 0) {
       workItemIds = body.workItemIds;
     } else if (body.assignedToMe) {
-      // Query for work items assigned to current user
+      // Query for work items assigned to the authenticated app user
+      const escapedUserEmail = escapeWiqlString(userEmail);
       const wiql = {
         query: `
           SELECT [System.Id], [System.Title], [System.WorkItemType], [System.State]
           FROM WorkItems
-          WHERE [System.AssignedTo] = @Me
+          WHERE [System.AssignedTo] = '${escapedUserEmail}'
             AND [System.State] <> 'Closed'
             AND [System.State] <> 'Removed'
           ORDER BY [System.ChangedDate] DESC
