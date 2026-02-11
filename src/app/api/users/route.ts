@@ -26,7 +26,7 @@ const fallbackNameFromEmail = (email: string): string => {
 export async function GET() {
   try {
     const users = db
-      .prepare("SELECT id, name, email, created_at FROM users ORDER BY created_at ASC")
+      .prepare("SELECT id, name, email, is_admin, created_at FROM users ORDER BY created_at ASC")
       .all() as User[];
     return NextResponse.json(users);
   } catch (error) {
@@ -62,11 +62,16 @@ export async function POST(request: NextRequest) {
     const expiresAtSeconds = Math.floor(Date.now() / 1000) + INVITATION_EXPIRY_SECONDS;
 
     const createUserWithInvitation = db.transaction(() => {
+      const count = db
+        .prepare("SELECT COUNT(*) as total FROM users")
+        .get() as { total: number };
+      const isFirstUser = count.total === 0 ? 1 : 0;
+
       const result = db
-        .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, NULL)")
-        .run(name, email);
+        .prepare("INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, NULL, ?)")
+        .run(name, email, isFirstUser);
       const user = db
-        .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
+        .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
         .get(result.lastInsertRowid) as User;
 
       db.prepare(
@@ -104,47 +109,79 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const rawName = typeof body?.name === "string" ? body.name : "";
-    const email = body?.email !== undefined ? normalizeEmail(body.email) : undefined;
-    const name = rawName.trim();
+    const hasName = body?.name !== undefined;
+    const hasEmail = body?.email !== undefined;
+    const hasIsAdmin = body?.is_admin !== undefined;
+    const rawName = hasName && typeof body?.name === "string" ? body.name : "";
+    const email = hasEmail ? normalizeEmail(body?.email) : undefined;
+    const isAdmin =
+      hasIsAdmin && typeof body?.is_admin === "boolean"
+        ? (body.is_admin ? 1 : 0)
+        : undefined;
 
-    if (!name) {
+    if (!hasName && !hasEmail && !hasIsAdmin) {
+      return NextResponse.json({ error: "At least one field is required" }, { status: 400 });
+    }
+    if (hasName && !rawName.trim()) {
       return NextResponse.json({ error: "User name is required" }, { status: 400 });
     }
-    if (email !== undefined && (!email || !isValidEmail(email))) {
+    if (hasEmail && (!email || !isValidEmail(email))) {
       return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
+    }
+    if (hasIsAdmin && isAdmin === undefined) {
+      return NextResponse.json({ error: "is_admin must be a boolean" }, { status: 400 });
     }
 
     const existingUser = db
-      .prepare("SELECT id FROM users WHERE id = ?")
-      .get(userId) as { id: number } | undefined;
+      .prepare("SELECT id, name, email, is_admin FROM users WHERE id = ?")
+      .get(userId) as (User & { is_admin: number }) | undefined;
     if (!existingUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const duplicateName = db
-      .prepare("SELECT id FROM users WHERE LOWER(name) = LOWER(?) AND id != ?")
-      .get(name, userId) as { id: number } | undefined;
-    if (duplicateName) {
-      return NextResponse.json({ error: "A user with this name already exists" }, { status: 409 });
+    const nextName = hasName ? rawName.trim() : existingUser.name;
+    const nextEmail = hasEmail ? email : existingUser.email;
+    const nextIsAdmin = isAdmin ?? existingUser.is_admin;
+
+    if (nextName !== existingUser.name) {
+      const duplicateName = db
+        .prepare("SELECT id FROM users WHERE LOWER(name) = LOWER(?) AND id != ?")
+        .get(nextName, userId) as { id: number } | undefined;
+      if (duplicateName) {
+        return NextResponse.json({ error: "A user with this name already exists" }, { status: 409 });
+      }
     }
 
-    if (email !== undefined) {
+    if (nextEmail !== existingUser.email) {
       const duplicateEmail = db
         .prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?")
-        .get(email, userId) as { id: number } | undefined;
+        .get(nextEmail, userId) as { id: number } | undefined;
       if (duplicateEmail) {
         return NextResponse.json({ error: "A user with this email already exists" }, { status: 409 });
       }
     }
 
-    if (email !== undefined) {
-      db.prepare("UPDATE users SET name = ?, email = ? WHERE id = ?").run(name, email, userId);
-    } else {
-      db.prepare("UPDATE users SET name = ? WHERE id = ?").run(name, userId);
+    if (existingUser.is_admin === 1 && nextIsAdmin === 0) {
+      const adminCount = db
+        .prepare("SELECT COUNT(*) as total FROM users WHERE is_admin = 1")
+        .get() as { total: number };
+      if (adminCount.total <= 1) {
+        return NextResponse.json(
+          { error: "At least one administrator is required" },
+          { status: 400 }
+        );
+      }
     }
+
+    db.prepare("UPDATE users SET name = ?, email = ?, is_admin = ? WHERE id = ?").run(
+      nextName,
+      nextEmail,
+      nextIsAdmin,
+      userId
+    );
+
     const updated = db
-      .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
+      .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
       .get(userId) as User;
 
     return NextResponse.json(updated);
@@ -162,8 +199,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     const existingUser = db
-      .prepare("SELECT id FROM users WHERE id = ?")
-      .get(userId) as { id: number } | undefined;
+      .prepare("SELECT id, is_admin FROM users WHERE id = ?")
+      .get(userId) as { id: number; is_admin: number } | undefined;
     if (!existingUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -173,6 +210,18 @@ export async function DELETE(request: NextRequest) {
       .get() as { total: number };
     if (count.total <= 1) {
       return NextResponse.json({ error: "At least one user is required" }, { status: 400 });
+    }
+
+    if (existingUser.is_admin === 1) {
+      const adminCount = db
+        .prepare("SELECT COUNT(*) as total FROM users WHERE is_admin = 1")
+        .get() as { total: number };
+      if (adminCount.total <= 1) {
+        return NextResponse.json(
+          { error: "At least one administrator is required" },
+          { status: 400 }
+        );
+      }
     }
 
     db.prepare("DELETE FROM users WHERE id = ?").run(userId);

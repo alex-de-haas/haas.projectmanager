@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const user = db
-      .prepare("SELECT id, name, email, password_hash, created_at FROM users WHERE LOWER(email) = LOWER(?)")
+      .prepare("SELECT id, name, email, is_admin, password_hash, created_at FROM users WHERE LOWER(email) = LOWER(?)")
       .get(email) as (User & { password_hash?: string | null }) | undefined;
 
     if (!user || !verifyPassword(password, user.password_hash)) {
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         name: user.name,
         email: user.email ?? null,
+        is_admin: user.is_admin ?? 0,
       },
     });
 

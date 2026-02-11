@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     }
 
     const user = db
-      .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
+      .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
       .get(userId) as User | undefined;
 
     if (!user) {
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         id: user.id,
         name: user.name,
         email: user.email ?? null,
+        is_admin: user.is_admin ?? 0,
       },
     });
   } catch (error) {

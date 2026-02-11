@@ -127,5 +127,6 @@ export interface User {
   id: number;
   name: string;
   email?: string | null;
+  is_admin?: number;
   created_at: Date;
 }

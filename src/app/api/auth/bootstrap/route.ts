@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
 
       const passwordHash = hashPassword(password);
       const result = db
-        .prepare("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)")
+        .prepare("INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, ?, 1)")
         .run(name, email, passwordHash);
       const user = db
-        .prepare("SELECT id, name, email, created_at FROM users WHERE id = ?")
+        .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
         .get(result.lastInsertRowid) as User;
 
       db.prepare("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)")
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         name: user.name,
         email: user.email ?? null,
+        is_admin: user.is_admin ?? 0,
       },
     });
 

@@ -55,6 +55,7 @@ const initDb = () => {
       name TEXT NOT NULL UNIQUE,
       email TEXT,
       password_hash TEXT,
+      is_admin INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -211,6 +212,7 @@ const initDb = () => {
     const usersTableInfo = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
     const hasEmailColumn = usersTableInfo.some((col) => col.name === "email");
     const hasPasswordHashColumn = usersTableInfo.some((col) => col.name === "password_hash");
+    const hasIsAdminColumn = usersTableInfo.some((col) => col.name === "is_admin");
 
     if (!hasEmailColumn) {
       db.exec("ALTER TABLE users ADD COLUMN email TEXT");
@@ -218,8 +220,20 @@ const initDb = () => {
     if (!hasPasswordHashColumn) {
       db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT");
     }
+    if (!hasIsAdminColumn) {
+      db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+    }
 
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email)");
+
+    const adminCount = db
+      .prepare("SELECT COUNT(*) as total FROM users WHERE is_admin = 1")
+      .get() as { total: number };
+    if (adminCount.total === 0) {
+      db.prepare(
+        "UPDATE users SET is_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1)"
+      ).run();
+    }
   } catch (error) {
     console.error('Migration error:', error);
   }

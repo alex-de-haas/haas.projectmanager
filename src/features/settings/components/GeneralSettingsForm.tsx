@@ -65,6 +65,7 @@ interface AppUser {
   id: number;
   name: string;
   email?: string | null;
+  is_admin?: number;
   created_at?: string;
 }
 
@@ -367,12 +368,6 @@ export function GeneralSettingsForm({
     }
   };
 
-  const handleSwitchUser = async (userId: string) => {
-    if (!userId || userId === activeUserId) return;
-    setMessage("Switching user profiles is disabled. Please sign in as another user.");
-    setMessageType("error");
-  };
-
   const resetCreateUserDialog = () => {
     setNewUserEmail("");
     setNewUserName("");
@@ -497,6 +492,38 @@ export function GeneralSettingsForm({
       setMessageType("success");
     } catch (err) {
       setMessage("Failed to delete user.");
+      setMessageType("error");
+    } finally {
+      setUpdatingUser(false);
+    }
+  };
+
+  const handleSetUserAdmin = async (targetUser: AppUser, makeAdmin: boolean) => {
+    setUpdatingUser(true);
+    try {
+      const response = await fetch(`/api/users?id=${targetUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_admin: makeAdmin }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiError;
+        setMessage(data.error || "Failed to update administrator status.");
+        setMessageType("error");
+        return;
+      }
+
+      const updated = (await response.json()) as AppUser;
+      setUsers((prev) => prev.map((user) => (user.id === updated.id ? updated : user)));
+      setMessage(
+        makeAdmin
+          ? `User "${updated.name}" is now an administrator.`
+          : `User "${updated.name}" is no longer an administrator.`
+      );
+      setMessageType("success");
+    } catch {
+      setMessage("Failed to update administrator status.");
       setMessageType("error");
     } finally {
       setUpdatingUser(false);
@@ -995,39 +1022,44 @@ export function GeneralSettingsForm({
         </TabsList>
 
         <TabsContent value="users" className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor="activeUser">Active User</Label>
-            <Select
-              value={activeUserId}
-              onValueChange={handleSwitchUser}
-              disabled
-            >
-              <SelectTrigger id="activeUser">
-                <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select user"} />
-              </SelectTrigger>
-              <SelectContent>
-                {users.map((user) => (
-                  <SelectItem key={user.id} value={String(user.id)}>
-                    <div className="flex items-center gap-2">
-                      <UserAvatar name={user.name} className="h-5 w-5 text-[9px]" />
-                      <span>{user.name} {user.email ? `(${user.email})` : ""}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Active user is derived from the current sign-in session.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-md border p-2">
-            <UserAvatar
-              name={users.find((user) => String(user.id) === activeUserId)?.name}
-              className="h-8 w-8 text-xs"
-            />
-            <p className="text-sm font-medium">
-              {users.find((user) => String(user.id) === activeUserId)?.name || "No user selected"}
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <UserAvatar
+                name={users.find((user) => String(user.id) === activeUserId)?.name}
+                className="h-8 w-8 text-xs"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {users.find((user) => String(user.id) === activeUserId)?.name || "No user selected"}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {users.find((user) => String(user.id) === activeUserId)?.email || "No email"}
+                </p>
+                {users.find((user) => String(user.id) === activeUserId)?.is_admin ? (
+                  <p className="text-xs text-muted-foreground">Administrator</p>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleOpenRenameUser}
+                disabled={!activeUserId || creatingUser || updatingUser || loadingUsers}
+                className="gap-2"
+              >
+                <UserPen className="h-4 w-4" />
+                Rename
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleOpenChangePassword}
+                disabled={!activeUserId || changingPassword}
+              >
+                Change Password
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -1048,7 +1080,14 @@ export function GeneralSettingsForm({
                       className="flex items-center justify-between gap-3 rounded-md border bg-background p-2"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{user.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium">{user.name}</p>
+                          {user.is_admin ? (
+                            <Badge variant="secondary" className="h-5 px-2 text-[10px]">
+                              Administrator
+                            </Badge>
+                          ) : null}
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {user.email || "No email"}
                         </p>
@@ -1069,6 +1108,12 @@ export function GeneralSettingsForm({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => void handleSetUserAdmin(user, !Boolean(user.is_admin))}
+                              disabled={updatingUser}
+                            >
+                              {user.is_admin ? "Remove administrator" : "Mark as administrator"}
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onSelect={() => void handleDeleteUser(user)}
                               disabled={users.length <= 1 || updatingUser}
@@ -1097,24 +1142,6 @@ export function GeneralSettingsForm({
             >
               <Plus className="h-4 w-4" />
               {creatingUser ? "Creating..." : "Add User"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleOpenRenameUser}
-              disabled={!activeUserId || creatingUser || updatingUser || loadingUsers}
-              className="gap-2"
-            >
-              <UserPen className="h-4 w-4" />
-              Rename User
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleOpenChangePassword}
-              disabled={!activeUserId || changingPassword}
-            >
-              Change Password
             </Button>
           </div>
         </TabsContent>
