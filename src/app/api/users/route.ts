@@ -108,9 +108,14 @@ export async function POST(request: NextRequest) {
         .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
         .get(result.lastInsertRowid) as User;
 
+      const projectResult = db
+        .prepare("INSERT INTO projects (user_id, name, updated_at) VALUES (?, 'Default', CURRENT_TIMESTAMP)")
+        .run(user.id);
+      const defaultProjectId = Number(projectResult.lastInsertRowid);
+
       db.prepare(
-        "INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)"
-      ).run(user.id, "default_day_length", "8");
+        "INSERT OR IGNORE INTO settings (user_id, project_id, key, value) VALUES (?, ?, ?, ?)"
+      ).run(user.id, defaultProjectId, "default_day_length", "8");
 
       db.prepare("DELETE FROM user_invitations WHERE user_id = ?").run(user.id);
       db.prepare("INSERT INTO user_invitations (user_id, token_hash, expires_at) VALUES (?, ?, ?)")

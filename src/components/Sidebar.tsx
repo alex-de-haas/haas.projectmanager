@@ -6,8 +6,14 @@ import { usePathname } from "next/navigation";
 import { CalendarDays, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { UserAvatar } from "@/components/UserAvatar";
+import { UserAvatar, getUserAvatarColor } from "@/components/UserAvatar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
@@ -25,6 +31,22 @@ interface AppUser {
   name: string;
   email?: string | null;
 }
+
+interface AppProject {
+  id: number;
+  name: string;
+}
+
+const getProjectInitials = (name?: string): string => {
+  if (!name) return "?";
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+};
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -48,7 +70,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [mode, setMode] = useState<SidebarMode>("compact");
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [projects, setProjects] = useState<AppProject[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>("");
   const isLoginRoute = pathname === "/login";
+
+  const getCookieValue = (key: string) => {
+    const parts = document.cookie.split(";").map((item) => item.trim());
+    const found = parts.find((part) => part.startsWith(`${key}=`));
+    return found ? decodeURIComponent(found.split("=").slice(1).join("=")) : "";
+  };
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -64,21 +94,39 @@ export default function Sidebar() {
   useEffect(() => {
     if (isLoginRoute) return;
 
-    const loadUsers = async () => {
+    const loadSessionAndProjects = async () => {
       try {
-        const response = await fetch("/api/auth/session");
-        if (!response.ok) return;
-        const data = (await response.json()) as { user?: AppUser };
-        setCurrentUser(data.user ?? null);
+        const [sessionResponse, projectsResponse] = await Promise.all([
+          fetch("/api/auth/session"),
+          fetch("/api/projects"),
+        ]);
+
+        if (sessionResponse.ok) {
+          const data = (await sessionResponse.json()) as { user?: AppUser };
+          setCurrentUser(data.user ?? null);
+        }
+
+        if (projectsResponse.ok) {
+          const projectData = (await projectsResponse.json()) as AppProject[];
+          setProjects(projectData);
+          const cookieProjectId = getCookieValue("pm_project_id");
+          const defaultProjectId = projectData[0] ? String(projectData[0].id) : "";
+          const selectedId = projectData.some((project) => String(project.id) === cookieProjectId)
+            ? cookieProjectId
+            : defaultProjectId;
+          setActiveProjectId(selectedId);
+        }
       } catch (error) {
-        console.error("Failed to load current user:", error);
+        console.error("Failed to load sidebar context:", error);
       }
     };
 
-    loadUsers();
+    loadSessionAndProjects();
   }, [isLoginRoute]);
 
   const isCompact = mode === "compact";
+  const activeProject =
+    projects.find((project) => String(project.id) === activeProjectId) ?? null;
 
   const navItems = useMemo(
     () =>
@@ -98,6 +146,12 @@ export default function Sidebar() {
     window.location.href = "/login";
   };
 
+  const handleProjectChange = (value: string) => {
+    setActiveProjectId(value);
+    document.cookie = `pm_project_id=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+    window.location.reload();
+  };
+
   if (isLoginRoute) {
     return null;
   }
@@ -110,20 +164,66 @@ export default function Sidebar() {
         isCompact ? "w-16" : "w-56"
       )}
     >
-      <div className={cn("flex items-center", isCompact ? "justify-center p-4" : "px-4 py-5")}>
-        <div
-          className={cn(
-            "rounded-md bg-sidebar-primary text-sidebar-primary-foreground",
-            "flex items-center justify-center font-semibold",
-            isCompact ? "h-8 w-8 text-sm" : "h-8 w-8"
+      <div className={cn("space-y-3", isCompact ? "px-2 py-4" : "px-3 py-4")}>
+        <div className={cn("flex items-center", isCompact ? "justify-center" : "px-1")}>
+          <div
+            className={cn(
+              "rounded-md bg-sidebar-primary text-sidebar-primary-foreground",
+              "flex items-center justify-center font-semibold",
+              isCompact ? "h-8 w-8 text-sm" : "h-8 w-8"
+            )}
+          >
+            PM
+          </div>
+          {!isCompact && (
+            <span className="ml-3 text-sm font-semibold tracking-tight">
+              Project Manager
+            </span>
           )}
-        >
-          PM
         </div>
-        {!isCompact && (
-          <span className="ml-3 text-sm font-semibold tracking-tight">
-            Project Manager
-          </span>
+
+        {projects.length > 0 && (
+          <Select value={activeProjectId} onValueChange={handleProjectChange}>
+            <SelectTrigger
+              className={cn(
+                "h-9 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent",
+                isCompact
+                  ? "w-9 justify-center p-0 mx-auto border-0 shadow-none bg-transparent hover:bg-transparent [&>svg]:hidden"
+                  : "w-full justify-between px-2"
+              )}
+              aria-label="Select project"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: getUserAvatarColor(activeProject?.name) }}
+                  title={activeProject?.name || "Project"}
+                >
+                  {getProjectInitials(activeProject?.name)}
+                </div>
+                {!isCompact && (
+                  <span className="truncate text-sm">
+                    {activeProject?.name || "Select project"}
+                  </span>
+                )}
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={String(project.id)}>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                      style={{ backgroundColor: getUserAvatarColor(project.name) }}
+                    >
+                      {getProjectInitials(project.name)}
+                    </div>
+                    <span>{project.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
 

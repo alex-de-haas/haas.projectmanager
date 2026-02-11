@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { task_id, date, hours } = body;
 
@@ -29,13 +30,13 @@ export async function POST(request: NextRequest) {
       db.prepare(
         `DELETE FROM time_entries 
          WHERE task_id = ? AND date = ?
-           AND task_id IN (SELECT id FROM tasks WHERE id = ? AND user_id = ?)`
-      ).run(task_id, date, task_id, userId);
+           AND task_id IN (SELECT id FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?)`
+      ).run(task_id, date, task_id, userId, projectId);
     } else {
       // Insert or update the time entry
       const task = db
-        .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?')
-        .get(task_id, userId) as { id: number } | undefined;
+        .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?')
+        .get(task_id, userId, projectId) as { id: number } | undefined;
       if (!task) {
         return NextResponse.json({ error: 'Task not found' }, { status: 404 });
       }
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const taskId = searchParams.get('taskId');
 
@@ -77,9 +79,9 @@ export async function GET(request: NextRequest) {
       `SELECT te.date, te.hours
        FROM time_entries te
        INNER JOIN tasks t ON t.id = te.task_id
-       WHERE te.task_id = ? AND t.user_id = ?
+       WHERE te.task_id = ? AND t.user_id = ? AND t.project_id = ?
        ORDER BY te.date DESC`
-    ).all(taskId, userId);
+    ).all(taskId, userId, projectId);
 
     return NextResponse.json(entries);
   } catch (error) {

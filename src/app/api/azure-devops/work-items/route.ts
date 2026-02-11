@@ -3,15 +3,16 @@ import * as azdev from 'azure-devops-node-api';
 import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, AzureDevOpsWorkItem } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     // Get Azure DevOps settings
     const settingRow = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('azure_devops', userId) as Settings | undefined;
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+      .get('azure_devops', userId, projectId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -77,8 +78,9 @@ export async function GET(request: NextRequest) {
       FROM tasks
       WHERE external_source = 'azure_devops'
         AND user_id = ?
+        AND project_id = ?
         AND external_id IS NOT NULL
-    `).all(userId) as Array<{ external_id: string | number | null }>;
+    `).all(userId, projectId) as Array<{ external_id: string | number | null }>;
 
     const importedIds = new Set<number>();
     importedRows.forEach((row) => {

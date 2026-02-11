@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Settings } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 interface LMStudioSettings {
   endpoint: string;
@@ -26,11 +26,11 @@ interface LMStudioResponse {
   }>;
 }
 
-async function getLMStudioSettings(userId: number): Promise<LMStudioSettings | null> {
+async function getLMStudioSettings(userId: number, projectId: number): Promise<LMStudioSettings | null> {
   try {
     const setting = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('lm_studio', userId) as Settings | undefined;
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+      .get('lm_studio', userId, projectId) as Settings | undefined;
     if (!setting) return null;
     return JSON.parse(setting.value) as LMStudioSettings;
   } catch {
@@ -130,6 +130,7 @@ Return ONLY a JSON array of checklist items.`;
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json() as ChecklistGenerationRequest;
     const { task_id, text } = body;
 
@@ -148,14 +149,14 @@ export async function POST(request: NextRequest) {
     }
 
     const task = db
-      .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?')
-      .get(task_id, userId) as { id: number } | undefined;
+      .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?')
+      .get(task_id, userId, projectId) as { id: number } | undefined;
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
     // Get LM Studio settings
-    const settings = await getLMStudioSettings(userId);
+    const settings = await getLMStudioSettings(userId, projectId);
     if (!settings || !settings.endpoint) {
       return NextResponse.json(
         { error: 'LM Studio settings not configured. Please configure them in Settings.' },
@@ -175,18 +176,18 @@ export async function POST(request: NextRequest) {
 
     // Get the current max display_order for this task
     const maxOrder = db.prepare(
-      'SELECT MAX(display_order) as max_order FROM checklist_items WHERE task_id = ? AND user_id = ?'
-    ).get(task_id, userId) as { max_order: number | null };
+      'SELECT MAX(display_order) as max_order FROM checklist_items WHERE task_id = ? AND user_id = ? AND project_id = ?'
+    ).get(task_id, userId, projectId) as { max_order: number | null };
     let currentOrder = (maxOrder.max_order ?? -1) + 1;
 
     // Insert all checklist items
     const insertStmt = db.prepare(
-      'INSERT INTO checklist_items (user_id, task_id, title, display_order) VALUES (?, ?, ?, ?)'
+      'INSERT INTO checklist_items (user_id, project_id, task_id, title, display_order) VALUES (?, ?, ?, ?, ?)'
     );
 
     const insertedIds: number[] = [];
     for (const title of checklistItems) {
-      const result = insertStmt.run(userId, task_id, title, currentOrder);
+      const result = insertStmt.run(userId, projectId, task_id, title, currentOrder);
       insertedIds.push(result.lastInsertRowid as number);
       currentOrder++;
     }

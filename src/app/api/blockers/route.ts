@@ -1,26 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { Blocker } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const taskId = searchParams.get('taskId');
 
     if (taskId) {
       // Get blockers for a specific task
       const blockers = db.prepare(
-        'SELECT * FROM blockers WHERE task_id = ? AND user_id = ? ORDER BY created_at DESC'
-      ).all(taskId, userId) as Blocker[];
+        'SELECT * FROM blockers WHERE task_id = ? AND user_id = ? AND project_id = ? ORDER BY created_at DESC'
+      ).all(taskId, userId, projectId) as Blocker[];
 
       return NextResponse.json(blockers);
     } else {
       // Get all blockers
       const blockers = db.prepare(
-        'SELECT * FROM blockers WHERE user_id = ? ORDER BY created_at DESC'
-      ).all(userId) as Blocker[];
+        'SELECT * FROM blockers WHERE user_id = ? AND project_id = ? ORDER BY created_at DESC'
+      ).all(userId, projectId) as Blocker[];
 
       return NextResponse.json(blockers);
     }
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { task_id, comment, severity = 'medium' } = body;
 
@@ -54,15 +56,15 @@ export async function POST(request: NextRequest) {
     }
 
     const task = db
-      .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?')
-      .get(task_id, userId) as { id: number } | undefined;
+      .prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?')
+      .get(task_id, userId, projectId) as { id: number } | undefined;
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
 
     const result = db.prepare(
-      'INSERT INTO blockers (user_id, task_id, comment, severity) VALUES (?, ?, ?, ?)'
-    ).run(userId, task_id, comment, severity);
+      'INSERT INTO blockers (user_id, project_id, task_id, comment, severity) VALUES (?, ?, ?, ?, ?)'
+    ).run(userId, projectId, task_id, comment, severity);
 
     return NextResponse.json(
       { message: 'Blocker created successfully', id: result.lastInsertRowid },
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { id, comment, severity, is_resolved } = body;
 
@@ -129,7 +132,8 @@ export async function PATCH(request: NextRequest) {
 
     values.push(id);
     values.push(userId);
-    const sql = `UPDATE blockers SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`;
+    values.push(projectId);
+    const sql = `UPDATE blockers SET ${updates.join(', ')} WHERE id = ? AND user_id = ? AND project_id = ?`;
     const result = db.prepare(sql).run(...values);
 
     if (result.changes === 0) {
@@ -155,6 +159,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const blockerId = searchParams.get('id');
 
@@ -165,7 +170,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const result = db.prepare('DELETE FROM blockers WHERE id = ? AND user_id = ?').run(blockerId, userId);
+    const result = db.prepare('DELETE FROM blockers WHERE id = ? AND user_id = ? AND project_id = ?').run(blockerId, userId, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json(

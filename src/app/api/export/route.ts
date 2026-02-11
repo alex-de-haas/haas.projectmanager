@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import db from '@/lib/db';
 import type { Task, TimeEntry, Settings, AzureDevOpsSettings } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get('month'); // Format: YYYY-MM
 
@@ -25,8 +26,8 @@ export async function GET(request: NextRequest) {
     let azureSettings: AzureDevOpsSettings | null = null;
     try {
       const setting = db
-        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-        .get('azure_devops', userId) as Settings | undefined;
+        .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+        .get('azure_devops', userId, projectId) as Settings | undefined;
       if (setting) {
         azureSettings = JSON.parse(setting.value) as AzureDevOpsSettings;
       }
@@ -38,18 +39,19 @@ export async function GET(request: NextRequest) {
     const tasks = db.prepare(`
       SELECT * FROM tasks 
       WHERE user_id = ?
+        AND project_id = ?
         AND DATE(created_at) <= ?
         AND (completed_at IS NULL OR DATE(completed_at) >= ?)
       ORDER BY COALESCE(display_order, 999999), created_at ASC
-    `).all(userId, endDate, startDate) as Task[];
+    `).all(userId, projectId, endDate, startDate) as Task[];
 
     // Fetch time entries for the specified month
     const timeEntries = db.prepare(
       `SELECT te.*
        FROM time_entries te
        INNER JOIN tasks t ON t.id = te.task_id
-       WHERE t.user_id = ? AND te.date >= ? AND te.date <= ?`
-    ).all(userId, startDate, endDate) as TimeEntry[];
+       WHERE t.user_id = ? AND t.project_id = ? AND te.date >= ? AND te.date <= ?`
+    ).all(userId, projectId, startDate, endDate) as TimeEntry[];
 
     // Calculate total hours per task
     const taskHours = new Map<number, number>();

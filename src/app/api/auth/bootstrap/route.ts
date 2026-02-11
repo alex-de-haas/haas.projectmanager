@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { AUTH_COOKIE_NAME, createAuthToken, getSessionMaxAgeSeconds } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import type { User } from "@/types";
+import { PROJECT_COOKIE_NAME } from "@/lib/user-context";
 
 const normalizeEmail = (value: unknown): string =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -56,16 +57,22 @@ export async function POST(request: NextRequest) {
         .prepare("SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?")
         .get(result.lastInsertRowid) as User;
 
-      db.prepare("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)")
-        .run(user.id, "default_day_length", "8");
+      const projectResult = db
+        .prepare("INSERT INTO projects (user_id, name, updated_at) VALUES (?, 'Default', CURRENT_TIMESTAMP)")
+        .run(user.id);
+      const defaultProjectId = Number(projectResult.lastInsertRowid);
 
-      return user;
+      db.prepare("INSERT OR IGNORE INTO settings (user_id, project_id, key, value) VALUES (?, ?, ?, ?)")
+        .run(user.id, defaultProjectId, "default_day_length", "8");
+
+      return { user, defaultProjectId };
     });
 
-    const user = createFirstUser();
-    if (!user) {
+    const created = createFirstUser();
+    if (!created) {
       return NextResponse.json({ error: "Initial setup has already been completed" }, { status: 409 });
     }
+    const { user, defaultProjectId } = created;
 
     const authToken = createAuthToken(user.id);
     const response = NextResponse.json({
@@ -86,6 +93,13 @@ export async function POST(request: NextRequest) {
     });
 
     response.cookies.set("pm_user_id", String(user.id), {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: getSessionMaxAgeSeconds(),
+    });
+    response.cookies.set(PROJECT_COOKIE_NAME, String(defaultProjectId), {
       httpOnly: false,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

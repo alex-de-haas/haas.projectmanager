@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { AUTH_COOKIE_NAME, createAuthToken, getSessionMaxAgeSeconds } from "@/lib/auth";
 import { verifyPassword } from "@/lib/password";
 import type { User } from "@/types";
+import { PROJECT_COOKIE_NAME } from "@/lib/user-context";
 
 const normalizeEmail = (value: unknown): string =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -29,6 +30,9 @@ export async function POST(request: NextRequest) {
     }
 
     const authToken = createAuthToken(user.id);
+    const project = db
+      .prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT 1")
+      .get(user.id) as { id: number } | undefined;
     const response = NextResponse.json({
       user: {
         id: user.id,
@@ -53,6 +57,15 @@ export async function POST(request: NextRequest) {
       path: "/",
       maxAge: getSessionMaxAgeSeconds(),
     });
+    if (project?.id) {
+      response.cookies.set(PROJECT_COOKIE_NAME, String(project.id), {
+        httpOnly: false,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: getSessionMaxAgeSeconds(),
+      });
+    }
 
     return response;
   } catch (error) {

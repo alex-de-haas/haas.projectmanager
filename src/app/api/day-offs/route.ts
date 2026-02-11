@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import type { DayOff } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 // GET - Fetch all day-offs or filter by date range
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const allUsers = searchParams.get('allUsers') === 'true';
 
     let query = allUsers
-      ? 'SELECT day_offs.*, users.name AS user_name FROM day_offs JOIN users ON users.id = day_offs.user_id WHERE 1 = 1'
-      : 'SELECT * FROM day_offs WHERE user_id = ?';
-    const params: Array<string | number> = allUsers ? [] : [userId];
+      ? 'SELECT day_offs.*, users.name AS user_name FROM day_offs JOIN users ON users.id = day_offs.user_id WHERE day_offs.project_id = ?'
+      : 'SELECT * FROM day_offs WHERE user_id = ? AND project_id = ?';
+    const params: Array<string | number> = allUsers ? [projectId] : [userId, projectId];
 
     if (startDate && endDate) {
       query += ' AND date BETWEEN ? AND ?';
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { date, description, isHalfDay = false } = body;
 
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if day-off already exists for this date
-    const existing = db.prepare('SELECT id FROM day_offs WHERE date = ? AND user_id = ?').get(date, userId);
+    const existing = db.prepare('SELECT id FROM day_offs WHERE date = ? AND user_id = ? AND project_id = ?').get(date, userId, projectId);
     if (existing) {
       return NextResponse.json(
         { error: 'Day-off already exists for this date' },
@@ -61,13 +63,13 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      'INSERT INTO day_offs (user_id, date, description, is_half_day) VALUES (?, ?, ?, ?)'
+      'INSERT INTO day_offs (user_id, project_id, date, description, is_half_day) VALUES (?, ?, ?, ?, ?)'
     );
-    const result = stmt.run(userId, date, description || null, isHalfDay ? 1 : 0);
+    const result = stmt.run(userId, projectId, date, description || null, isHalfDay ? 1 : 0);
 
     const newDayOff = db
-      .prepare('SELECT * FROM day_offs WHERE id = ? AND user_id = ?')
-      .get(result.lastInsertRowid, userId) as DayOff;
+      .prepare('SELECT * FROM day_offs WHERE id = ? AND user_id = ? AND project_id = ?')
+      .get(result.lastInsertRowid, userId, projectId) as DayOff;
 
     return NextResponse.json(newDayOff, { status: 201 });
   } catch (error) {
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
     const date = searchParams.get('date');
@@ -98,11 +101,11 @@ export async function DELETE(request: NextRequest) {
     let result;
 
     if (id) {
-      stmt = db.prepare('DELETE FROM day_offs WHERE id = ? AND user_id = ?');
-      result = stmt.run(parseInt(id), userId);
+      stmt = db.prepare('DELETE FROM day_offs WHERE id = ? AND user_id = ? AND project_id = ?');
+      result = stmt.run(parseInt(id), userId, projectId);
     } else {
-      stmt = db.prepare('DELETE FROM day_offs WHERE date = ? AND user_id = ?');
-      result = stmt.run(date, userId);
+      stmt = db.prepare('DELETE FROM day_offs WHERE date = ? AND user_id = ? AND project_id = ?');
+      result = stmt.run(date, userId, projectId);
     }
 
     if (result.changes === 0) {

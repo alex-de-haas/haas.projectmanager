@@ -4,6 +4,8 @@ import { getAuthenticatedUserId } from "@/lib/auth";
 
 export const USER_COOKIE_NAME = "pm_user_id";
 export const DEFAULT_USER_ID = 1;
+export const PROJECT_COOKIE_NAME = "pm_project_id";
+const DEFAULT_PROJECT_NAME = "Default";
 
 const parseUserId = (value: string | null | undefined): number | null => {
   if (!value) return null;
@@ -48,4 +50,55 @@ export const getRequestUserId = (request: NextRequest): number => {
 
   const fromCookie = parseUserId(request.cookies.get(USER_COOKIE_NAME)?.value);
   return resolveKnownUserId(fromCookie);
+};
+
+const parseProjectId = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
+const ensureDefaultProjectForUser = (userId: number): number => {
+  const existing = db
+    .prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT 1")
+    .get(userId) as { id: number } | undefined;
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const inserted = db
+    .prepare("INSERT INTO projects (user_id, name) VALUES (?, ?)")
+    .run(userId, DEFAULT_PROJECT_NAME);
+  return Number(inserted.lastInsertRowid);
+};
+
+const resolveKnownProjectId = (userId: number, candidateProjectId: number | null): number => {
+  const fallbackProjectId = ensureDefaultProjectForUser(userId);
+
+  if (!candidateProjectId) {
+    return fallbackProjectId;
+  }
+
+  const project = db
+    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ?")
+    .get(candidateProjectId, userId) as { id: number } | undefined;
+
+  return project ? candidateProjectId : fallbackProjectId;
+};
+
+export const getRequestProjectId = (
+  request: NextRequest,
+  resolvedUserId?: number
+): number => {
+  const userId = resolvedUserId ?? getRequestUserId(request);
+  const fromHeader = parseProjectId(request.headers.get("x-project-id"));
+  if (fromHeader) return resolveKnownProjectId(userId, fromHeader);
+
+  const fromQuery = parseProjectId(request.nextUrl.searchParams.get("projectId"));
+  if (fromQuery) return resolveKnownProjectId(userId, fromQuery);
+
+  const fromCookie = parseProjectId(request.cookies.get(PROJECT_COOKIE_NAME)?.value);
+  return resolveKnownProjectId(userId, fromCookie);
 };

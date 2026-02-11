@@ -3,7 +3,7 @@ import * as azdev from "azure-devops-node-api";
 import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi";
 import db from "@/lib/db";
 import type { ReleaseWorkItem, Settings, AzureDevOpsSettings } from "@/types";
-import { getRequestUserId } from "@/lib/user-context";
+import { getRequestProjectId, getRequestUserId } from "@/lib/user-context";
 
 interface ImportRequest {
   releaseId?: number;
@@ -13,6 +13,7 @@ interface ImportRequest {
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = (await request.json()) as ImportRequest;
     const releaseId = body.releaseId;
     const workItemIds = body.workItemIds ?? [];
@@ -32,16 +33,16 @@ export async function POST(request: NextRequest) {
     }
 
     const release = db
-      .prepare("SELECT id FROM releases WHERE id = ? AND user_id = ?")
-      .get(releaseId, userId) as { id: number } | undefined;
+      .prepare("SELECT id FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
+      .get(releaseId, userId, projectId) as { id: number } | undefined;
 
     if (!release) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });
     }
 
     const settingRow = db
-      .prepare("SELECT * FROM settings WHERE key = ? AND user_id = ?")
-      .get("azure_devops", userId) as Settings | undefined;
+      .prepare("SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?")
+      .get("azure_devops", userId, projectId) as Settings | undefined;
 
     if (!settingRow) {
       return NextResponse.json(
@@ -97,9 +98,9 @@ export async function POST(request: NextRequest) {
 
       const existing = db
         .prepare(
-          "SELECT id FROM release_work_items WHERE release_id = ? AND external_id = ? AND external_source = 'azure_devops' AND user_id = ?"
+          "SELECT id FROM release_work_items WHERE release_id = ? AND external_id = ? AND external_source = 'azure_devops' AND user_id = ? AND project_id = ?"
         )
-        .get(releaseId, workItem.id, userId) as { id: number } | undefined;
+        .get(releaseId, workItem.id, userId, projectId) as { id: number } | undefined;
 
       if (existing) {
         skipped.push({ id: workItem.id, reason: "Already added" });
@@ -116,23 +117,23 @@ export async function POST(request: NextRequest) {
 
       // Get the max display_order for this release
       const maxOrderRow = db
-        .prepare("SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND user_id = ?")
-        .get(releaseId, userId) as { max_order: number | null } | undefined;
+        .prepare("SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND user_id = ? AND project_id = ?")
+        .get(releaseId, userId, projectId) as { max_order: number | null } | undefined;
       const nextOrder = (maxOrderRow?.max_order ?? -1) + 1;
 
       const stmt = db.prepare(
         `
         INSERT INTO release_work_items
-          (user_id, release_id, title, external_id, external_source, work_item_type, state, tags, display_order)
+          (user_id, project_id, release_id, title, external_id, external_source, work_item_type, state, tags, display_order)
         VALUES
-          (?, ?, ?, ?, 'azure_devops', ?, ?, ?, ?)
+          (?, ?, ?, ?, ?, 'azure_devops', ?, ?, ?, ?)
       `
       );
 
-      const result = stmt.run(userId, releaseId, title, workItem.id, workItemType, state, tagsString, nextOrder);
+      const result = stmt.run(userId, projectId, releaseId, title, workItem.id, workItemType, state, tagsString, nextOrder);
       const newItem = db
-        .prepare("SELECT * FROM release_work_items WHERE id = ? AND user_id = ?")
-        .get(result.lastInsertRowid, userId) as ReleaseWorkItem;
+        .prepare("SELECT * FROM release_work_items WHERE id = ? AND user_id = ? AND project_id = ?")
+        .get(result.lastInsertRowid, userId, projectId) as ReleaseWorkItem;
       imported.push(newItem);
     }
 

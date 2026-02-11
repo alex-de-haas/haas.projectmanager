@@ -59,6 +59,16 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL DEFAULT 1,
+      name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, name)
+    );
+
     CREATE TABLE IF NOT EXISTS user_invitations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -72,6 +82,7 @@ const initDb = () => {
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       title TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'task',
       status TEXT,
@@ -79,6 +90,7 @@ const initDb = () => {
       external_source TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       CHECK(type IN ('task', 'bug'))
     );
 
@@ -95,40 +107,47 @@ const initDb = () => {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       key TEXT NOT NULL,
       value TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      UNIQUE(user_id, key)
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(user_id, project_id, key)
     );
 
     CREATE TABLE IF NOT EXISTS day_offs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       date TEXT NOT NULL,
       description TEXT,
       is_half_day INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      UNIQUE(user_id, date)
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(user_id, project_id, date)
     );
 
     CREATE TABLE IF NOT EXISTS releases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       name TEXT NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT NOT NULL,
       display_order INTEGER DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS release_work_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       release_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       external_id TEXT,
@@ -139,12 +158,14 @@ const initDb = () => {
       display_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS blockers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       task_id INTEGER NOT NULL,
       comment TEXT NOT NULL,
       severity TEXT NOT NULL DEFAULT 'medium',
@@ -152,6 +173,7 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       resolved_at DATETIME,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
       CHECK(severity IN ('low', 'medium', 'high', 'critical'))
     );
@@ -159,6 +181,7 @@ const initDb = () => {
     CREATE TABLE IF NOT EXISTS checklist_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
+      project_id INTEGER NOT NULL DEFAULT 1,
       task_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       is_completed INTEGER DEFAULT 0,
@@ -166,6 +189,7 @@ const initDb = () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
@@ -198,6 +222,16 @@ const initDb = () => {
     }
   };
 
+  const ensureProjectColumn = (tableName: string) => {
+    const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    const hasProjectIdColumn = tableInfo.some((col) => col.name === "project_id");
+    if (!hasProjectIdColumn) {
+      console.log(`Adding project_id column to ${tableName} table...`);
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN project_id INTEGER`);
+      console.log(`project_id column added to ${tableName} successfully`);
+    }
+  };
+
   try {
     ensureUserColumn("tasks");
     ensureUserColumn("releases");
@@ -206,6 +240,141 @@ const initDb = () => {
     ensureUserColumn("checklist_items");
   } catch (error) {
     console.error('Migration error:', error);
+  }
+
+  try {
+    ensureProjectColumn("tasks");
+    ensureProjectColumn("settings");
+    ensureProjectColumn("day_offs");
+    ensureProjectColumn("releases");
+    ensureProjectColumn("release_work_items");
+    ensureProjectColumn("blockers");
+    ensureProjectColumn("checklist_items");
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    const users = db.prepare("SELECT id FROM users ORDER BY created_at ASC, id ASC").all() as Array<{ id: number }>;
+    const findProject = db.prepare(
+      "SELECT id FROM projects WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT 1"
+    );
+    const createProject = db.prepare("INSERT INTO projects (user_id, name) VALUES (?, ?)");
+
+    for (const user of users) {
+      const existing = findProject.get(user.id) as { id: number } | undefined;
+      if (!existing) {
+        createProject.run(user.id, "Default");
+      }
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    const projectScopedTables = [
+      "tasks",
+      "settings",
+      "day_offs",
+      "releases",
+      "release_work_items",
+      "blockers",
+      "checklist_items",
+    ];
+
+    for (const table of projectScopedTables) {
+      db.exec(`
+        UPDATE ${table}
+        SET project_id = (
+          SELECT p.id
+          FROM projects p
+          WHERE p.user_id = ${table}.user_id
+          ORDER BY p.created_at ASC, p.id ASC
+          LIMIT 1
+        )
+        WHERE project_id IS NULL
+           OR project_id NOT IN (
+             SELECT p2.id
+             FROM projects p2
+             WHERE p2.user_id = ${table}.user_id
+           )
+      `);
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    const indexRows = db.prepare("PRAGMA index_list(settings)").all() as Array<{ name: string; unique: number }>;
+    const hasScopedUnique = indexRows
+      .filter((row) => row.unique === 1)
+      .some((row) => {
+        const columns = db.prepare(`PRAGMA index_info(${row.name})`).all() as Array<{ name: string }>;
+        return columns.length === 3 && columns[0]?.name === "user_id" && columns[1]?.name === "project_id" && columns[2]?.name === "key";
+      });
+
+    if (!hasScopedUnique) {
+      db.exec(`
+        CREATE TABLE settings_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 1,
+          project_id INTEGER NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          UNIQUE(user_id, project_id, key)
+        );
+      `);
+      db.exec(`
+        INSERT INTO settings_new (id, user_id, project_id, key, value, created_at, updated_at)
+        SELECT id, user_id, project_id, key, value, created_at, updated_at FROM settings;
+      `);
+      db.exec("DROP TABLE settings");
+      db.exec("ALTER TABLE settings_new RENAME TO settings");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_settings_user_project_key ON settings(user_id, project_id, key)");
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    const indexRows = db.prepare("PRAGMA index_list(day_offs)").all() as Array<{ name: string; unique: number }>;
+    const hasScopedUnique = indexRows
+      .filter((row) => row.unique === 1)
+      .some((row) => {
+        const columns = db.prepare(`PRAGMA index_info(${row.name})`).all() as Array<{ name: string }>;
+        return columns.length === 3 && columns[0]?.name === "user_id" && columns[1]?.name === "project_id" && columns[2]?.name === "date";
+      });
+
+    if (!hasScopedUnique) {
+      db.exec(`
+        CREATE TABLE day_offs_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL DEFAULT 1,
+          project_id INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          description TEXT,
+          is_half_day INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          UNIQUE(user_id, project_id, date)
+        );
+      `);
+      db.exec(`
+        INSERT INTO day_offs_new (id, user_id, project_id, date, description, is_half_day, created_at)
+        SELECT id, user_id, project_id, date, description, is_half_day, created_at FROM day_offs;
+      `);
+      db.exec("DROP TABLE day_offs");
+      db.exec("ALTER TABLE day_offs_new RENAME TO day_offs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoffs_user_project_date ON day_offs(user_id, project_id, date)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date)");
+    }
+  } catch (error) {
+    console.error("Migration error:", error);
   }
 
   try {
@@ -246,8 +415,16 @@ const initDb = () => {
       CREATE INDEX IF NOT EXISTS idx_releases_user_id ON releases(user_id);
       CREATE INDEX IF NOT EXISTS idx_release_work_items_user_id ON release_work_items(user_id);
       CREATE INDEX IF NOT EXISTS idx_blockers_user_id ON blockers(user_id);
-      CREATE INDEX IF NOT EXISTS idx_checklist_user_id ON checklist_items(user_id);
-    `);
+    CREATE INDEX IF NOT EXISTS idx_checklist_user_id ON checklist_items(user_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_settings_user_project_key ON settings(user_id, project_id, key);
+    CREATE INDEX IF NOT EXISTS idx_dayoffs_user_project_date ON day_offs(user_id, project_id, date);
+    CREATE INDEX IF NOT EXISTS idx_releases_project_id ON releases(project_id);
+    CREATE INDEX IF NOT EXISTS idx_release_work_items_project_id ON release_work_items(project_id);
+    CREATE INDEX IF NOT EXISTS idx_blockers_project_id ON blockers(project_id);
+    CREATE INDEX IF NOT EXISTS idx_checklist_project_id ON checklist_items(project_id);
+  `);
   } catch (error) {
     console.error('Migration error:', error);
   }
@@ -262,21 +439,37 @@ const initDb = () => {
         CREATE TABLE day_offs_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL DEFAULT 1,
+          project_id INTEGER NOT NULL,
           date TEXT NOT NULL,
           description TEXT,
           is_half_day INTEGER NOT NULL DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-          UNIQUE(user_id, date)
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          UNIQUE(user_id, project_id, date)
         );
       `);
       db.exec(`
-        INSERT INTO day_offs_new (id, user_id, date, description, is_half_day, created_at)
-        SELECT id, 1, date, description, COALESCE(is_half_day, 0), created_at FROM day_offs;
+        INSERT INTO day_offs_new (id, user_id, project_id, date, description, is_half_day, created_at)
+        SELECT
+          d.id,
+          1,
+          (
+            SELECT p.id
+            FROM projects p
+            WHERE p.user_id = 1
+            ORDER BY p.created_at ASC, p.id ASC
+            LIMIT 1
+          ),
+          d.date,
+          d.description,
+          COALESCE(d.is_half_day, 0),
+          d.created_at
+        FROM day_offs d;
       `);
       db.exec("DROP TABLE day_offs");
       db.exec("ALTER TABLE day_offs_new RENAME TO day_offs");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoffs_user_date ON day_offs(user_id, date)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_dayoffs_user_project_date ON day_offs(user_id, project_id, date)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_dayoff_date ON day_offs(date)");
       console.log("day_offs table migrated successfully");
     }
@@ -294,21 +487,37 @@ const initDb = () => {
         CREATE TABLE settings_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL DEFAULT 1,
+          project_id INTEGER NOT NULL,
           key TEXT NOT NULL,
           value TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-          UNIQUE(user_id, key)
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          UNIQUE(user_id, project_id, key)
         );
       `);
       db.exec(`
-        INSERT INTO settings_new (id, user_id, key, value, created_at, updated_at)
-        SELECT id, 1, key, value, created_at, updated_at FROM settings;
+        INSERT INTO settings_new (id, user_id, project_id, key, value, created_at, updated_at)
+        SELECT
+          s.id,
+          1,
+          (
+            SELECT p.id
+            FROM projects p
+            WHERE p.user_id = 1
+            ORDER BY p.created_at ASC, p.id ASC
+            LIMIT 1
+          ),
+          s.key,
+          s.value,
+          s.created_at,
+          s.updated_at
+        FROM settings s;
       `);
       db.exec("DROP TABLE settings");
       db.exec("ALTER TABLE settings_new RENAME TO settings");
-      db.exec("CREATE INDEX IF NOT EXISTS idx_settings_user_key ON settings(user_id, key)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_settings_user_project_key ON settings(user_id, project_id, key)");
       console.log("settings table migrated successfully");
     }
   } catch (error) {

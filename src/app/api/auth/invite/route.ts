@@ -4,6 +4,7 @@ import { hashPassword } from "@/lib/password";
 import { AUTH_COOKIE_NAME, createAuthToken, getSessionMaxAgeSeconds } from "@/lib/auth";
 import { hashInvitationToken } from "@/lib/invitations";
 import type { User } from "@/types";
+import { PROJECT_COOKIE_NAME } from "@/lib/user-context";
 
 const parseToken = (value: unknown): string => {
   return typeof value === "string" ? value.trim() : "";
@@ -93,6 +94,9 @@ export async function POST(request: NextRequest) {
 
     const user = acceptInvitation();
     const authToken = createAuthToken(user.id);
+    const project = db
+      .prepare("SELECT id FROM projects WHERE user_id = ? ORDER BY created_at ASC, id ASC LIMIT 1")
+      .get(user.id) as { id: number } | undefined;
     const response = NextResponse.json({
       user: {
         id: user.id,
@@ -115,6 +119,15 @@ export async function POST(request: NextRequest) {
       path: "/",
       maxAge: getSessionMaxAgeSeconds(),
     });
+    if (project?.id) {
+      response.cookies.set(PROJECT_COOKIE_NAME, String(project.id), {
+        httpOnly: false,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: getSessionMaxAgeSeconds(),
+      });
+    }
 
     return response;
   } catch (error) {
@@ -125,4 +138,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
   }
 }
-

@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import type { Release } from "@/types";
-import { getRequestUserId } from "@/lib/user-context";
+import { getRequestProjectId, getRequestUserId } from "@/lib/user-context";
 
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const releases = db
-      .prepare("SELECT * FROM releases WHERE user_id = ? ORDER BY COALESCE(display_order, 999999) ASC, created_at ASC")
-      .all(userId) as Release[];
+      .prepare("SELECT * FROM releases WHERE user_id = ? AND project_id = ? ORDER BY COALESCE(display_order, 999999) ASC, created_at ASC")
+      .all(userId, projectId) as Release[];
     return NextResponse.json(releases);
   } catch (error) {
     console.error("Database error:", error);
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { name, start_date, end_date } = body as {
       name?: string;
@@ -44,19 +46,19 @@ export async function POST(request: NextRequest) {
     }
 
     const stmt = db.prepare(
-      "SELECT MAX(display_order) as max_order FROM releases WHERE user_id = ?"
+      "SELECT MAX(display_order) as max_order FROM releases WHERE user_id = ? AND project_id = ?"
     );
-    const currentMax = stmt.get(userId) as { max_order: number | null };
+    const currentMax = stmt.get(userId, projectId) as { max_order: number | null };
     const nextOrder = (currentMax.max_order ?? -1) + 1;
 
     const insertStmt = db.prepare(
-      "INSERT INTO releases (user_id, name, start_date, end_date, display_order, status) VALUES (?, ?, ?, ?, ?, 'active')"
+      "INSERT INTO releases (user_id, project_id, name, start_date, end_date, display_order, status) VALUES (?, ?, ?, ?, ?, ?, 'active')"
     );
-    const result = insertStmt.run(userId, name.trim(), start_date, end_date, nextOrder);
+    const result = insertStmt.run(userId, projectId, name.trim(), start_date, end_date, nextOrder);
 
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ?")
-      .get(result.lastInsertRowid, userId) as Release;
+      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
+      .get(result.lastInsertRowid, userId, projectId) as Release;
 
     return NextResponse.json(release, { status: 201 });
   } catch (error) {
@@ -71,6 +73,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body = await request.json();
     const { id, status, name } = body as {
       id?: number;
@@ -127,8 +130,8 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    values.push(releaseId, userId);
-    const stmt = db.prepare(`UPDATE releases SET ${updates.join(", ")} WHERE id = ? AND user_id = ?`);
+    values.push(releaseId, userId, projectId);
+    const stmt = db.prepare(`UPDATE releases SET ${updates.join(", ")} WHERE id = ? AND user_id = ? AND project_id = ?`);
     const result = stmt.run(...values);
 
     if (result.changes === 0) {
@@ -136,8 +139,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ?")
-      .get(releaseId, userId) as Release;
+      .prepare("SELECT * FROM releases WHERE id = ? AND user_id = ? AND project_id = ?")
+      .get(releaseId, userId, projectId) as Release;
 
     return NextResponse.json(release);
   } catch (error) {
@@ -152,6 +155,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const searchParams = request.nextUrl.searchParams;
     const idParam = searchParams.get("id");
 
@@ -170,8 +174,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const stmt = db.prepare("DELETE FROM releases WHERE id = ? AND user_id = ?");
-    const result = stmt.run(id, userId);
+    const stmt = db.prepare("DELETE FROM releases WHERE id = ? AND user_id = ? AND project_id = ?");
+    const result = stmt.run(id, userId, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json({ error: "Release not found" }, { status: 404 });

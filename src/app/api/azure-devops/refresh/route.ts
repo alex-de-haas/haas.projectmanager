@@ -3,15 +3,16 @@ import * as azdev from 'azure-devops-node-api';
 import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     // Get Azure DevOps settings
     const settingRow = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('azure_devops', userId) as Settings | undefined;
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+      .get('azure_devops', userId, projectId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -39,8 +40,8 @@ export async function POST(request: NextRequest) {
 
     // Get all tasks imported from Azure DevOps
     const importedTasks = db.prepare(
-      'SELECT * FROM tasks WHERE external_source = ? AND user_id = ? AND external_id IS NOT NULL'
-    ).all('azure_devops', userId) as Task[];
+      'SELECT * FROM tasks WHERE external_source = ? AND user_id = ? AND project_id = ? AND external_id IS NOT NULL'
+    ).all('azure_devops', userId, projectId) as Task[];
 
     if (importedTasks.length === 0) {
       return NextResponse.json({ 
@@ -146,10 +147,10 @@ export async function POST(request: NextRequest) {
       const stmt = db.prepare(`
         UPDATE tasks 
         SET title = ?, type = ?, status = ?, completed_at = ?
-        WHERE id = ?
+        WHERE id = ? AND user_id = ? AND project_id = ?
       `);
 
-      stmt.run(title, taskType, status, closedDate, task.id);
+      stmt.run(title, taskType, status, closedDate, task.id, userId, projectId);
       
       updated.push({ id: workItem.id, title, status: status || 'N/A' });
     }

@@ -4,7 +4,7 @@ import { WorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import { JsonPatchDocument, JsonPatchOperation, Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import db from '@/lib/db';
 import type { Settings, AzureDevOpsSettings, Task } from '@/types';
-import { getRequestUserId } from '@/lib/user-context';
+import { getRequestProjectId, getRequestUserId } from '@/lib/user-context';
 
 interface ExportRequest {
   taskId: number;
@@ -14,6 +14,7 @@ interface ExportRequest {
 export async function POST(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     const body: ExportRequest = await request.json();
     const { taskId, parentWorkItemId } = body;
 
@@ -26,8 +27,8 @@ export async function POST(request: NextRequest) {
 
     // Get the task from database
     const task = db
-      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?')
-      .get(taskId, userId) as Task | undefined;
+      .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?')
+      .get(taskId, userId, projectId) as Task | undefined;
 
     if (!task) {
       return NextResponse.json(
@@ -46,8 +47,8 @@ export async function POST(request: NextRequest) {
 
     // Get Azure DevOps settings
     const settingRow = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('azure_devops', userId) as Settings | undefined;
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+      .get('azure_devops', userId, projectId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(
@@ -150,8 +151,8 @@ export async function POST(request: NextRequest) {
     db.prepare(`
       UPDATE tasks 
       SET external_id = ?, external_source = 'azure_devops' 
-      WHERE id = ? AND user_id = ?
-    `).run(createdWorkItem.id.toString(), taskId, userId);
+      WHERE id = ? AND user_id = ? AND project_id = ?
+    `).run(createdWorkItem.id.toString(), taskId, userId, projectId);
 
     return NextResponse.json({
       success: true,
@@ -172,10 +173,11 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
+    const projectId = getRequestProjectId(request, userId);
     // Get Azure DevOps settings
     const settingRow = db
-      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ?')
-      .get('azure_devops', userId) as Settings | undefined;
+      .prepare('SELECT * FROM settings WHERE key = ? AND user_id = ? AND project_id = ?')
+      .get('azure_devops', userId, projectId) as Settings | undefined;
     
     if (!settingRow) {
       return NextResponse.json(

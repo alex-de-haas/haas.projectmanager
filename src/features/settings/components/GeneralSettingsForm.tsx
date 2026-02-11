@@ -69,6 +69,11 @@ interface AppUser {
   created_at?: string;
 }
 
+interface AppProject {
+  id: number;
+  name: string;
+}
+
 interface CreatedUserResponse extends AppUser {
   invitation_link?: string;
 }
@@ -160,6 +165,12 @@ export function GeneralSettingsForm({
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [creatingUser, setCreatingUser] = useState(false);
   const [updatingUser, setUpdatingUser] = useState(false);
+  const [projects, setProjects] = useState<AppProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [updatingProject, setUpdatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [activeProjectId, setActiveProjectId] = useState("");
   const [releases, setReleases] = useState<Release[]>([]);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [releaseName, setReleaseName] = useState("");
@@ -284,11 +295,52 @@ export function GeneralSettingsForm({
     }
   };
 
+  const readCookie = (key: string) => {
+    const parts = document.cookie.split(";").map((item) => item.trim());
+    const found = parts.find((part) => part.startsWith(`${key}=`));
+    return found ? decodeURIComponent(found.split("=").slice(1).join("=")) : "";
+  };
+
+  const setProjectCookie = (projectId: string) => {
+    document.cookie = `pm_project_id=${encodeURIComponent(projectId)}; path=/; max-age=31536000; samesite=lax`;
+  };
+
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const response = await fetch("/api/projects");
+      if (!response.ok) {
+        throw new Error("Failed to fetch projects");
+      }
+
+      const data = (await response.json()) as AppProject[];
+      setProjects(data);
+      const cookieProjectId = readCookie("pm_project_id");
+      const selectedId = data.some((project) => String(project.id) === cookieProjectId)
+        ? cookieProjectId
+        : data[0]
+          ? String(data[0].id)
+          : "";
+      setActiveProjectId(selectedId);
+      if (selectedId && selectedId !== cookieProjectId) {
+        setProjectCookie(selectedId);
+      }
+    } catch (err) {
+      setMessage("Failed to load projects.");
+      setMessageType("error");
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
   useEffect(() => {
     loadUsers();
+    loadProjects();
     loadSettings();
     loadBackups();
     loadReleases();
+    // load* functions are intentionally run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadBackups = async () => {
@@ -528,6 +580,113 @@ export function GeneralSettingsForm({
     } finally {
       setUpdatingUser(false);
     }
+  };
+
+  const handleCreateProject = async () => {
+    const trimmed = newProjectName.trim();
+    if (!trimmed) {
+      setMessage("Project name is required.");
+      setMessageType("error");
+      return;
+    }
+
+    setCreatingProject(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = (await response.json().catch(() => ({}))) as ApiError & AppProject;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create project.");
+      }
+
+      setNewProjectName("");
+      await loadProjects();
+      setActiveProjectId(String(data.id));
+      setProjectCookie(String(data.id));
+      setMessage(`Project "${trimmed}" created.`);
+      setMessageType("success");
+      window.location.reload();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to create project.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
+  const handleRenameProject = async () => {
+    const selected = projects.find((project) => String(project.id) === activeProjectId);
+    if (!selected) return;
+
+    const nextName = window.prompt("Rename project", selected.name);
+    if (!nextName) return;
+
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === selected.name) return;
+
+    setUpdatingProject(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selected.id, name: trimmed }),
+      });
+      const data = (await response.json().catch(() => ({}))) as ApiError;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to rename project.");
+      }
+
+      await loadProjects();
+      setMessage(`Project renamed to "${trimmed}".`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to rename project.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setUpdatingProject(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    const selected = projects.find((project) => String(project.id) === activeProjectId);
+    if (!selected) return;
+
+    const confirmed = window.confirm(
+      `Delete project "${selected.name}"? The project must be empty before deletion.`
+    );
+    if (!confirmed) return;
+
+    setUpdatingProject(true);
+    try {
+      const response = await fetch(`/api/projects?id=${selected.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json().catch(() => ({}))) as ApiError;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete project.");
+      }
+
+      await loadProjects();
+      setMessage(`Project "${selected.name}" deleted.`);
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to delete project.";
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setUpdatingProject(false);
+    }
+  };
+
+  const handleSwitchProject = (projectId: string) => {
+    setActiveProjectId(projectId);
+    setProjectCookie(projectId);
+    window.location.reload();
   };
 
   const handleCreateRelease = async () => {
@@ -1012,8 +1171,9 @@ export function GeneralSettingsForm({
   ) : (
     <form onSubmit={handleSave}>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="projects">Projects</TabsTrigger>
           <TabsTrigger value="releases">Releases</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="database">Database</TabsTrigger>
@@ -1164,6 +1324,69 @@ export function GeneralSettingsForm({
               Set the default number of hours in a working day (used for
               calculations)
             </p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="projects" className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="activeProject">Active Project</Label>
+            <Select
+              value={activeProjectId}
+              onValueChange={handleSwitchProject}
+              disabled={loadingProjects || projects.length === 0 || updatingProject || creatingProject}
+            >
+              <SelectTrigger id="activeProject">
+                <SelectValue placeholder={loadingProjects ? "Loading projects..." : "Select project"} />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={String(project.id)}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Switching project refreshes the app and scopes tasks, releases, day-offs, and settings.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="newProjectName">Create Project</Label>
+            <div className="flex gap-2">
+              <Input
+                id="newProjectName"
+                value={newProjectName}
+                onChange={(event) => setNewProjectName(event.target.value)}
+                placeholder="e.g., Mobile App"
+              />
+              <Button
+                type="button"
+                onClick={handleCreateProject}
+                disabled={creatingProject || updatingProject}
+              >
+                {creatingProject ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRenameProject}
+              disabled={!activeProjectId || updatingProject || creatingProject}
+            >
+              Rename project
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteProject}
+              disabled={!activeProjectId || projects.length <= 1 || updatingProject || creatingProject}
+            >
+              Delete project
+            </Button>
           </div>
         </TabsContent>
 
