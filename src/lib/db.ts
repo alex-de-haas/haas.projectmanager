@@ -712,6 +712,28 @@ const initDb = () => {
     console.error('Migration error:', error);
   }
 
+  // Migration: Add task_id column to release_work_items table if it doesn't exist
+  try {
+    const releaseWorkItemsTableInfo = db
+      .prepare("PRAGMA table_info(release_work_items)")
+      .all() as Array<{ name: string }>;
+    const hasTaskIdColumn = releaseWorkItemsTableInfo.some(
+      (col) => col.name === "task_id"
+    );
+
+    if (!hasTaskIdColumn) {
+      console.log("Adding task_id column to release_work_items table...");
+      db.exec("ALTER TABLE release_work_items ADD COLUMN task_id INTEGER");
+      console.log("task_id column added to release_work_items successfully");
+    }
+
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_release_work_items_task_id ON release_work_items(task_id)"
+    );
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
   // Migration: Add status column to releases table if it doesn't exist
   try {
     const releasesTableInfo = db.prepare("PRAGMA table_info(releases)").all() as Array<{ name: string }>;

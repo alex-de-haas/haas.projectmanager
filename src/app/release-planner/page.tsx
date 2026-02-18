@@ -9,7 +9,13 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import ReleaseImportModal from "@/features/release-planner/components/ReleaseImportModal";
+import { BlockersModal } from "@/features/blockers";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +54,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bug, GripVertical, ListTodo, MoreVertical } from "lucide-react";
+import { Bug, GripVertical, ListTodo, MoreVertical, ShieldAlert } from "lucide-react";
 
 type ChildDiscipline = "backend" | "frontend" | "design";
 
@@ -186,6 +192,11 @@ export default function ReleaseTrackingPage() {
   const [loadingChildItemsDialog, setLoadingChildItemsDialog] = useState(false);
   const [childItemsDialogError, setChildItemsDialogError] = useState<string | null>(null);
   const [childSubmitting, setChildSubmitting] = useState(false);
+  const [blockerTaskLoadingItemId, setBlockerTaskLoadingItemId] = useState<number | null>(null);
+  const [showBlockers, setShowBlockers] = useState<{
+    taskId: number;
+    taskTitle: string;
+  } | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -463,6 +474,68 @@ export default function ReleaseTrackingPage() {
       setWorkItemsLoading(false);
     }
   }, []);
+
+  const ensureBlockerTaskForItem = useCallback(
+    async (item: ReleaseWorkItem) => {
+      if (item.task_id && Number(item.task_id) > 0) {
+        return Number(item.task_id);
+      }
+
+      setBlockerTaskLoadingItemId(item.id);
+      try {
+        const response = await fetch(
+          `/api/releases/work-items/${item.id}/blocker-task`,
+          {
+            method: "POST",
+          }
+        );
+        if (!response.ok) {
+          const errorData = await response
+            .json()
+            .catch(() => ({ error: "Failed to prepare blockers" }));
+          throw new Error(errorData.error || "Failed to prepare blockers");
+        }
+        const data = (await response.json()) as { taskId?: number };
+        if (!data.taskId || !Number.isInteger(data.taskId)) {
+          throw new Error("Failed to prepare blockers");
+        }
+
+        setWorkItems((previous) =>
+          previous.map((existing) =>
+            existing.id === item.id
+              ? {
+                  ...existing,
+                  task_id: data.taskId,
+                }
+              : existing
+          )
+        );
+        return data.taskId;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to prepare blockers";
+        toast.error(message);
+        return null;
+      } finally {
+        setBlockerTaskLoadingItemId((current) =>
+          current === item.id ? null : current
+        );
+      }
+    },
+    []
+  );
+
+  const handleOpenBlockers = useCallback(
+    async (item: ReleaseWorkItem) => {
+      const taskId = await ensureBlockerTaskForItem(item);
+      if (!taskId) return;
+      setShowBlockers({
+        taskId,
+        taskTitle: item.title,
+      });
+    },
+    [ensureBlockerTaskForItem]
+  );
 
   const loadChildCounts = useCallback(async (titles: string[]) => {
     const parentIds = Array.from(
@@ -883,6 +956,24 @@ export default function ReleaseTrackingPage() {
 
                           const workItemUrl = getWorkItemUrl();
                           const itemState = item.state?.toLowerCase();
+                          const activeBlockers =
+                            item.blockers?.filter((blocker) => !blocker.is_resolved) ?? [];
+                          const hasBlockers = activeBlockers.length > 0;
+                          const highestSeverity = hasBlockers
+                            ? activeBlockers.reduce((max, blocker) => {
+                                const severityOrder = {
+                                  low: 1,
+                                  medium: 2,
+                                  high: 3,
+                                  critical: 4,
+                                };
+                                const maxOrder =
+                                  severityOrder[max as keyof typeof severityOrder] ?? 0;
+                                const blockerOrder =
+                                  severityOrder[blocker.severity as keyof typeof severityOrder] ?? 0;
+                                return blockerOrder > maxOrder ? blocker.severity : max;
+                              }, "low")
+                            : null;
                           const externalId = Number(item.external_id);
                           const childCounts =
                             Number.isInteger(externalId) && externalId > 0
@@ -896,6 +987,18 @@ export default function ReleaseTrackingPage() {
                                 };
 
                           const getRowClass = () => {
+                            if (hasBlockers) {
+                              switch (highestSeverity) {
+                                case "critical":
+                                  return "group border-b border-border bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900";
+                                case "high":
+                                  return "group border-b border-border bg-orange-100 hover:bg-orange-200 dark:bg-orange-950 dark:hover:bg-orange-900";
+                                case "medium":
+                                  return "group border-b border-border bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-950 dark:hover:bg-yellow-900";
+                                case "low":
+                                  return "group border-b border-border bg-blue-100 hover:bg-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900";
+                              }
+                            }
                             if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
                               return "group border-b border-border bg-green-50 hover:bg-green-100 dark:bg-green-950 dark:hover:bg-green-900";
                             }
@@ -906,6 +1009,18 @@ export default function ReleaseTrackingPage() {
                           };
 
                           const getStickyBgClass = () => {
+                            if (hasBlockers) {
+                              switch (highestSeverity) {
+                                case "critical":
+                                  return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
+                                case "high":
+                                  return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
+                                case "medium":
+                                  return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
+                                case "low":
+                                  return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                              }
+                            }
                             if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
                               return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                             }
@@ -916,6 +1031,18 @@ export default function ReleaseTrackingPage() {
                           };
 
                           const getDragHandleBgClass = () => {
+                            if (hasBlockers) {
+                              switch (highestSeverity) {
+                                case "critical":
+                                  return "sticky left-0 bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
+                                case "high":
+                                  return "sticky left-0 bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
+                                case "medium":
+                                  return "sticky left-0 bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
+                                case "low":
+                                  return "sticky left-0 bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                              }
+                            }
                             if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
                               return "sticky left-0 bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                             }
@@ -947,6 +1074,55 @@ export default function ReleaseTrackingPage() {
                                     >
                                       {Math.floor(Number(item.external_id))}
                                     </Badge>
+                                  )}
+                                  {hasBlockers && (
+                                    <HoverCard openDelay={100} closeDelay={100}>
+                                      <HoverCardTrigger>
+                                        <Badge
+                                          variant="outline"
+                                          className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                                          onClick={() => void handleOpenBlockers(item)}
+                                          title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+                                        >
+                                          <ShieldAlert className="w-3 h-3" />
+                                          <span className="font-semibold">{activeBlockers.length}</span>
+                                        </Badge>
+                                      </HoverCardTrigger>
+                                      <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
+                                        <div className="space-y-2">
+                                          <h4 className="text-sm font-semibold flex items-center gap-2">
+                                            <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
+                                            Active Blockers ({activeBlockers.length})
+                                          </h4>
+                                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                                            {activeBlockers.map((blocker) => (
+                                              <div
+                                                key={blocker.id}
+                                                className="text-xs border rounded-md p-2 bg-background"
+                                              >
+                                                <div className="flex items-start justify-between gap-2 mb-1">
+                                                  <Badge
+                                                    variant="outline"
+                                                    className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
+                                                      blocker.severity === "critical"
+                                                        ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
+                                                        : blocker.severity === "high"
+                                                        ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800"
+                                                        : blocker.severity === "medium"
+                                                        ? "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800"
+                                                        : "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
+                                                    }`}
+                                                  >
+                                                    {blocker.severity}
+                                                  </Badge>
+                                                </div>
+                                                <p className="text-foreground">{blocker.comment}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </HoverCardContent>
+                                    </HoverCard>
                                   )}
                                   <Badge
                                     variant="outline"
@@ -1039,7 +1215,25 @@ export default function ReleaseTrackingPage() {
                                       <MoreVertical className="h-4 w-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuItem
+                                      disabled={blockerTaskLoadingItemId === item.id}
+                                      onClick={() => void handleOpenBlockers(item)}
+                                    >
+                                      <span className="flex items-center gap-2">
+                                        <ShieldAlert className="h-4 w-4" />
+                                        <span>
+                                          {blockerTaskLoadingItemId === item.id
+                                            ? "Preparing..."
+                                            : "Manage Blockers"}
+                                        </span>
+                                        {hasBlockers && (
+                                          <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
+                                            {activeBlockers.length}
+                                          </Badge>
+                                        )}
+                                      </span>
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                       disabled={moveTargetReleases.length === 0}
                                       onClick={() => {
@@ -1375,6 +1569,19 @@ export default function ReleaseTrackingPage() {
             )}
           </DialogContent>
         </Dialog>
+      )}
+
+      {showBlockers && (
+        <BlockersModal
+          taskId={showBlockers.taskId}
+          taskTitle={showBlockers.taskTitle}
+          onClose={() => setShowBlockers(null)}
+          onSuccess={() => {
+            if (activeReleaseId) {
+              loadWorkItemsForRelease(activeReleaseId);
+            }
+          }}
+        />
       )}
 
       {showImport && activeRelease && (
