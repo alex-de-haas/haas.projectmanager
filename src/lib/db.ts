@@ -208,6 +208,21 @@ const initDb = () => {
       FOREIGN KEY (release_id) REFERENCES releases(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS release_work_item_children (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      parent_external_id INTEGER NOT NULL,
+      child_external_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      work_item_type TEXT NOT NULL,
+      state TEXT,
+      assigned_to TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, child_external_id)
+    );
+
     CREATE TABLE IF NOT EXISTS blockers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL DEFAULT 1,
@@ -250,6 +265,8 @@ const initDb = () => {
     CREATE INDEX IF NOT EXISTS idx_release_status ON releases(status);
     CREATE INDEX IF NOT EXISTS idx_release_work_items_release_id ON release_work_items(release_id);
     CREATE INDEX IF NOT EXISTS idx_release_work_items_external_id ON release_work_items(external_id);
+    CREATE INDEX IF NOT EXISTS idx_release_work_item_children_parent ON release_work_item_children(project_id, parent_external_id);
+    CREATE INDEX IF NOT EXISTS idx_release_work_item_children_type ON release_work_item_children(project_id, work_item_type);
     CREATE INDEX IF NOT EXISTS idx_blocker_task_id ON blockers(task_id);
     CREATE INDEX IF NOT EXISTS idx_blocker_resolved ON blockers(is_resolved);
     CREATE INDEX IF NOT EXISTS idx_checklist_task_id ON checklist_items(task_id);
@@ -332,7 +349,6 @@ const initDb = () => {
   try {
     const projectScopedTables = [
       "tasks",
-      "settings",
       "day_offs",
       "releases",
       "release_work_items",
@@ -358,6 +374,53 @@ const initDb = () => {
            )
       `);
     }
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  try {
+    db.exec(`
+      UPDATE settings AS s
+      SET project_id = (
+        SELECT p.id
+        FROM projects p
+        WHERE p.user_id = s.user_id
+        ORDER BY p.created_at ASC, p.id ASC
+        LIMIT 1
+      )
+      WHERE (
+        s.project_id IS NULL
+        OR s.project_id NOT IN (
+          SELECT p2.id
+          FROM projects p2
+          WHERE p2.user_id = s.user_id
+        )
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM settings existing
+        WHERE existing.user_id = s.user_id
+          AND existing.key = s.key
+          AND existing.project_id = (
+            SELECT p3.id
+            FROM projects p3
+            WHERE p3.user_id = s.user_id
+            ORDER BY p3.created_at ASC, p3.id ASC
+            LIMIT 1
+          )
+          AND existing.id <> s.id
+      )
+    `);
+
+    db.exec(`
+      DELETE FROM settings
+      WHERE project_id IS NULL
+         OR project_id NOT IN (
+           SELECT p.id
+           FROM projects p
+           WHERE p.user_id = settings.user_id
+         )
+    `);
   } catch (error) {
     console.error("Migration error:", error);
   }
@@ -398,6 +461,7 @@ const initDb = () => {
       });
 
     if (!hasScopedUnique) {
+      db.exec("DROP TABLE IF EXISTS settings_new");
       db.exec(`
         CREATE TABLE settings_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -413,8 +477,26 @@ const initDb = () => {
         );
       `);
       db.exec(`
-        INSERT INTO settings_new (id, user_id, project_id, key, value, created_at, updated_at)
-        SELECT id, user_id, project_id, key, value, created_at, updated_at FROM settings;
+        WITH ranked AS (
+          SELECT
+            user_id,
+            project_id,
+            key,
+            value,
+            created_at,
+            updated_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY user_id, project_id, key
+              ORDER BY
+                COALESCE(updated_at, created_at) DESC,
+                id DESC
+            ) AS rn
+          FROM settings
+        )
+        INSERT INTO settings_new (user_id, project_id, key, value, created_at, updated_at)
+        SELECT user_id, project_id, key, value, created_at, updated_at
+        FROM ranked
+        WHERE rn = 1;
       `);
       db.exec("DROP TABLE settings");
       db.exec("ALTER TABLE settings_new RENAME TO settings");
@@ -567,6 +649,7 @@ const initDb = () => {
 
     if (!hasUserIdColumn) {
       console.log("Migrating settings table for multi-user support...");
+      db.exec("DROP TABLE IF EXISTS settings_new");
       db.exec(`
         CREATE TABLE settings_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -582,9 +665,22 @@ const initDb = () => {
         );
       `);
       db.exec(`
-        INSERT INTO settings_new (id, user_id, project_id, key, value, created_at, updated_at)
+        WITH ranked AS (
+          SELECT
+            s.key as key,
+            s.value as value,
+            s.created_at as created_at,
+            s.updated_at as updated_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY s.key
+              ORDER BY
+                COALESCE(s.updated_at, s.created_at) DESC,
+                s.id DESC
+            ) AS rn
+          FROM settings s
+        )
+        INSERT INTO settings_new (user_id, project_id, key, value, created_at, updated_at)
         SELECT
-          s.id,
           1,
           (
             SELECT p.id
@@ -593,11 +689,12 @@ const initDb = () => {
             ORDER BY p.created_at ASC, p.id ASC
             LIMIT 1
           ),
-          s.key,
-          s.value,
-          s.created_at,
-          s.updated_at
-        FROM settings s;
+          ranked.key,
+          ranked.value,
+          ranked.created_at,
+          ranked.updated_at
+        FROM ranked
+        WHERE ranked.rn = 1;
       `);
       db.exec("DROP TABLE settings");
       db.exec("ALTER TABLE settings_new RENAME TO settings");

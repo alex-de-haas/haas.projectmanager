@@ -742,6 +742,11 @@ export default function Home() {
       // First, refresh Azure DevOps tasks
       const refreshResponse = await fetch("/api/azure-devops/refresh", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+        }),
       });
 
       if (refreshResponse.ok) {

@@ -6,6 +6,10 @@ import { WorkItemTrackingApi } from "azure-devops-node-api/WorkItemTrackingApi";
 import db from "@/lib/db";
 import type { ReleaseWorkItem, Settings, AzureDevOpsSettings } from "@/types";
 import { getRequestProjectId, getRequestUserId } from "@/lib/user-context";
+import {
+  fetchChildWorkItemsForParentIds,
+  syncChildWorkItemsSnapshot,
+} from "@/lib/azure-devops/child-work-items";
 
 interface ImportRequest {
   releaseId?: number;
@@ -139,11 +143,49 @@ export async function POST(request: NextRequest) {
       imported.push(newItem);
     }
 
+    const parentIds = Array.from(
+      new Set(
+        workItemIds.filter(
+          (id): id is number => Number.isInteger(id) && id > 0
+        )
+      )
+    );
+
+    let childItemsSync: { parents: number; items: number; deleted: number } = {
+      parents: 0,
+      items: 0,
+      deleted: 0,
+    };
+    let childItemsSyncError: string | null = null;
+
+    if (parentIds.length > 0) {
+      try {
+        const childItems = await fetchChildWorkItemsForParentIds(
+          witApi,
+          settings.project,
+          parentIds
+        );
+        childItemsSync = syncChildWorkItemsSnapshot({
+          projectId,
+          parentIds,
+          items: childItems,
+        });
+      } catch (error) {
+        childItemsSyncError =
+          error instanceof Error
+            ? error.message
+            : "Failed to sync child work items";
+        console.error("Release work item child sync error:", error);
+      }
+    }
+
     return NextResponse.json({
       imported: imported.length,
       skipped: skipped.length,
       items: imported,
       skippedDetails: skipped,
+      childItemsSync,
+      childItemsSyncError,
     });
   } catch (error) {
     console.error("Release work item import error:", error);

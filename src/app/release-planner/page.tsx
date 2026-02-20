@@ -444,7 +444,7 @@ export default function ReleaseTrackingPage() {
       } catch (err) {
         console.error(err);
         if (!cancelled) {
-          setExistingChildTasksError("Failed to load child items from Azure DevOps");
+          setExistingChildTasksError("Failed to load child items");
           setExistingChildTasks([]);
         }
       } finally {
@@ -687,6 +687,21 @@ export default function ReleaseTrackingPage() {
     }
   };
 
+  const canOpenAzureDevOpsItem = Boolean(
+    azureDevOpsOrganization && azureDevOpsProject
+  );
+
+  const handleOpenAzureDevOpsItemById = useCallback(
+    (workItemId: number) => {
+      if (!canOpenAzureDevOpsItem) return;
+      const parsedId = Number(workItemId);
+      if (!Number.isInteger(parsedId) || parsedId <= 0) return;
+      const url = `https://dev.azure.com/${azureDevOpsOrganization}/${azureDevOpsProject}/_workitems/edit/${Math.floor(parsedId)}`;
+      window.open(url, "_blank");
+    },
+    [azureDevOpsOrganization, azureDevOpsProject, canOpenAzureDevOpsItem]
+  );
+
   const handleCreateChildTask = useCallback(async () => {
     if (!showCreateChild) return;
 
@@ -775,7 +790,7 @@ export default function ReleaseTrackingPage() {
         );
       } catch (err) {
         console.error(err);
-        setChildItemsDialogError("Failed to load child items from Azure DevOps");
+        setChildItemsDialogError("Failed to load child items");
       } finally {
         setLoadingChildItemsDialog(false);
       }
@@ -795,8 +810,15 @@ export default function ReleaseTrackingPage() {
     setIsRefreshing(true);
 
     try {
+      if (!activeReleaseId) {
+        toast.error("No active release selected");
+        return;
+      }
+
       const refreshResponse = await fetch("/api/azure-devops/refresh", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ releaseId: activeReleaseId }),
       });
 
       if (refreshResponse.ok) {
@@ -1323,13 +1345,24 @@ export default function ReleaseTrackingPage() {
                   <p className="text-xs text-muted-foreground">Loading...</p>
                 ) : existingChildTasks.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    No child tasks or bugs found in Azure DevOps.
+                    No child tasks or bugs found.
                   </p>
                 ) : (
                   <div className="space-y-1">
                     {existingChildTasks.map((task) => (
                       <div key={task.id} className="rounded border px-2 py-1 text-[11px]">
-                        <div className="font-medium break-words">{task.title}</div>
+                        {canOpenAzureDevOpsItem ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAzureDevOpsItemById(task.id)}
+                            className="font-medium break-words text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left"
+                            title={`Open #${task.id} in Azure DevOps`}
+                          >
+                            {task.title}
+                          </button>
+                        ) : (
+                          <div className="font-medium break-words">{task.title}</div>
+                        )}
                         <div className="text-muted-foreground">
                           #{task.id} {task.type} - {task.status || "Unknown"}
                         </div>
@@ -1543,9 +1576,20 @@ export default function ReleaseTrackingPage() {
                       className="rounded-md border p-3 flex items-start justify-between gap-3"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-medium break-words">
-                          #{childItem.id} {childItem.title}
-                        </div>
+                        {canOpenAzureDevOpsItem ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAzureDevOpsItemById(childItem.id)}
+                            className="text-sm font-medium break-words text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left"
+                            title={`Open #${childItem.id} in Azure DevOps`}
+                          >
+                            #{childItem.id} {childItem.title}
+                          </button>
+                        ) : (
+                          <div className="text-sm font-medium break-words">
+                            #{childItem.id} {childItem.title}
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground mt-1">
                           {childItem.status || "Unknown"}
                           {childItem.assignedTo ? ` | ${childItem.assignedTo}` : ""}
