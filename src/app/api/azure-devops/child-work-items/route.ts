@@ -20,6 +20,11 @@ const parseParentId = (value: unknown): number | null => {
   return parsed;
 };
 
+const isTaskResolvedOrClosed = (state?: string | null): boolean => {
+  const normalized = state?.trim().toLowerCase();
+  return normalized === "resolved" || normalized === "closed";
+};
+
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
@@ -70,9 +75,12 @@ export async function GET(request: NextRequest) {
         const itemType = item.type.toLowerCase();
         if (itemType === "task") acc.tasks += 1;
         if (itemType === "bug") acc.bugs += 1;
+        if (itemType === "task" && isTaskResolvedOrClosed(item.state)) {
+          acc.completedTasks += 1;
+        }
         return acc;
       },
-      { tasks: 0, bugs: 0 }
+      { tasks: 0, bugs: 0, completedTasks: 0 }
     );
 
     return NextResponse.json({ parentId, counts, items });
@@ -114,31 +122,40 @@ export async function POST(request: NextRequest) {
         `
           SELECT
             parent_external_id,
-            work_item_type,
-            COUNT(*) as total
+            SUM(CASE WHEN LOWER(work_item_type) = 'task' THEN 1 ELSE 0 END) as tasks_total,
+            SUM(CASE WHEN LOWER(work_item_type) = 'bug' THEN 1 ELSE 0 END) as bugs_total,
+            SUM(
+              CASE
+                WHEN LOWER(work_item_type) = 'task'
+                  AND LOWER(COALESCE(state, '')) IN ('resolved', 'closed')
+                THEN 1
+                ELSE 0
+              END
+            ) as tasks_completed
           FROM release_work_item_children
           WHERE project_id = ?
             AND parent_external_id IN (${placeholders})
-          GROUP BY parent_external_id, work_item_type
+          GROUP BY parent_external_id
         `
       )
       .all(projectId, ...parentIds) as Array<{
       parent_external_id: number;
-      work_item_type: string;
-      total: number;
+      tasks_total: number;
+      bugs_total: number;
+      tasks_completed: number;
     }>;
 
-    const counts: Record<string, { tasks: number; bugs: number }> = {};
+    const counts: Record<string, { tasks: number; bugs: number; completedTasks: number }> = {};
     for (const parentId of parentIds) {
-      counts[String(parentId)] = { tasks: 0, bugs: 0 };
+      counts[String(parentId)] = { tasks: 0, bugs: 0, completedTasks: 0 };
     }
 
     for (const row of rows) {
       const key = String(row.parent_external_id);
       if (!counts[key]) continue;
-      const itemType = row.work_item_type.toLowerCase();
-      if (itemType === "task") counts[key].tasks += row.total;
-      if (itemType === "bug") counts[key].bugs += row.total;
+      counts[key].tasks = row.tasks_total ?? 0;
+      counts[key].bugs = row.bugs_total ?? 0;
+      counts[key].completedTasks = row.tasks_completed ?? 0;
     }
 
     return NextResponse.json({ counts });

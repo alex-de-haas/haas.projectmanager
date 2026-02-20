@@ -35,6 +35,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -92,6 +95,7 @@ interface ExistingChildTask {
 interface ChildCounts {
   tasks: number;
   bugs: number;
+  completedTasks: number;
 }
 
 type ChildItemFilter = "task" | "bug";
@@ -188,15 +192,30 @@ export default function ReleaseTrackingPage() {
     title: string;
     filter: ChildItemFilter;
   } | null>(null);
+  const [releaseStatusUpdatingItemId, setReleaseStatusUpdatingItemId] = useState<
+    number | null
+  >(null);
   const [childItemsDialogItems, setChildItemsDialogItems] = useState<ExistingChildTask[]>([]);
   const [loadingChildItemsDialog, setLoadingChildItemsDialog] = useState(false);
   const [childItemsDialogError, setChildItemsDialogError] = useState<string | null>(null);
+  const [childStatusUpdatingId, setChildStatusUpdatingId] = useState<number | null>(
+    null
+  );
   const [childSubmitting, setChildSubmitting] = useState(false);
   const [blockerTaskLoadingItemId, setBlockerTaskLoadingItemId] = useState<number | null>(null);
   const [showBlockers, setShowBlockers] = useState<{
     taskId: number;
     taskTitle: string;
   } | null>(null);
+
+  const filteredChildItemsDialog = useMemo(() => {
+    if (!showChildItemsDialog) return [];
+    return childItemsDialogItems.filter((childItem) =>
+      showChildItemsDialog.filter === "task"
+        ? childItem.type.toLowerCase() === "task"
+        : childItem.type.toLowerCase() === "bug"
+    );
+  }, [childItemsDialogItems, showChildItemsDialog]);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -687,6 +706,75 @@ export default function ReleaseTrackingPage() {
     }
   };
 
+  const getStatusBadgeClass = (status?: string | null) => {
+    const normalized = status?.trim().toLowerCase();
+    if (!normalized) {
+      return "bg-muted text-muted-foreground border-border";
+    }
+
+    if (
+      normalized === "done" ||
+      normalized === "resolved" ||
+      normalized === "result" ||
+      normalized === "closed" ||
+      normalized === "completed" ||
+      normalized === "released"
+    ) {
+      return "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800";
+    }
+
+    if (normalized === "active") {
+      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800";
+    }
+
+    if (normalized === "blocked") {
+      return "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800";
+    }
+
+    return "bg-muted text-muted-foreground border-border";
+  };
+
+  const getStatusRowClass = (status?: string | null) => {
+    const normalized = status?.trim().toLowerCase();
+    if (!normalized) {
+      return "border-t border-border";
+    }
+
+    if (
+      normalized === "done" ||
+      normalized === "resolved" ||
+      normalized === "result" ||
+      normalized === "closed" ||
+      normalized === "completed" ||
+      normalized === "complete" ||
+      normalized === "released"
+    ) {
+      return "border-t border-border bg-green-50 hover:bg-green-100 dark:bg-green-950 dark:hover:bg-green-900";
+    }
+
+    if (normalized === "active") {
+      return "border-t border-border bg-blue-50 hover:bg-blue-100 dark:bg-blue-950 dark:hover:bg-blue-900";
+    }
+
+    if (normalized === "blocked") {
+      return "border-t border-border bg-red-50 hover:bg-red-100 dark:bg-red-950 dark:hover:bg-red-900";
+    }
+
+    return "border-t border-border";
+  };
+
+  const getReleaseWorkItemStatusOptions = (): string[] => {
+    return ["New", "Active", "Resolved", "Closed"];
+  };
+
+  const getChildStatusOptions = (workItemType: string): string[] => {
+    const normalized = workItemType.trim().toLowerCase();
+    if (normalized === "bug") {
+      return ["New", "Active", "Resolved"];
+    }
+    return ["New", "Active", "Closed"];
+  };
+
   const canOpenAzureDevOpsItem = Boolean(
     azureDevOpsOrganization && azureDevOpsProject
   );
@@ -700,6 +788,146 @@ export default function ReleaseTrackingPage() {
       window.open(url, "_blank");
     },
     [azureDevOpsOrganization, azureDevOpsProject, canOpenAzureDevOpsItem]
+  );
+
+  const handleReleaseWorkItemStatusChange = useCallback(
+    async (item: ReleaseWorkItem, newStatus: string) => {
+      if (item.external_source !== "azure_devops" || !item.external_id) {
+        toast.error("Only Azure DevOps user stories can be synced");
+        return;
+      }
+
+      setReleaseStatusUpdatingItemId(item.id);
+      try {
+        const response = await fetch("/api/azure-devops/release-work-items/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            releaseWorkItemId: item.id,
+            status: newStatus,
+          }),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to update user story status");
+        }
+
+        const externalId = Number(item.external_id);
+        setWorkItems((previous) =>
+          previous.map((workItem) => {
+            const workItemExternalId = Number(workItem.external_id);
+            if (
+              Number.isInteger(externalId) &&
+              externalId > 0 &&
+              Number.isInteger(workItemExternalId) &&
+              workItemExternalId === externalId
+            ) {
+              return {
+                ...workItem,
+                state: newStatus,
+              };
+            }
+            if (workItem.id === item.id) {
+              return {
+                ...workItem,
+                state: newStatus,
+              };
+            }
+            return workItem;
+          })
+        );
+
+        if (data?.synced) {
+          toast.success("Status updated and synced with Azure DevOps");
+        } else {
+          toast.success("Status updated");
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update user story status";
+        toast.error(message);
+      } finally {
+        setReleaseStatusUpdatingItemId((current) =>
+          current === item.id ? null : current
+        );
+      }
+    },
+    []
+  );
+
+  const handleChildStatusChange = useCallback(
+    async (workItemId: number, workItemType: string, newStatus: string) => {
+      const normalizedType = workItemType.trim().toLowerCase();
+      if (normalizedType !== "task" && normalizedType !== "bug") {
+        toast.error("Unsupported child work item type");
+        return;
+      }
+
+      setChildStatusUpdatingId(workItemId);
+      try {
+        const response = await fetch("/api/azure-devops/child-work-items/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workItemId,
+            workItemType: normalizedType,
+            status: newStatus,
+          }),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to update child work item status");
+        }
+
+        setExistingChildTasks((previous) =>
+          previous.map((item) =>
+            item.id === workItemId
+              ? {
+                  ...item,
+                  status: newStatus,
+                }
+              : item
+          )
+        );
+        setChildItemsDialogItems((previous) =>
+          previous.map((item) =>
+            item.id === workItemId
+              ? {
+                  ...item,
+                  status: newStatus,
+                }
+              : item
+          )
+        );
+
+        await loadChildCounts(
+          workItems
+            .filter(
+              (item) => item.external_source === "azure_devops" && item.external_id
+            )
+            .map((item) => String(item.external_id))
+        );
+
+        if (data?.synced) {
+          toast.success("Status updated and synced with Azure DevOps");
+        } else {
+          toast.success("Status updated");
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to update child work item status";
+        toast.error(message);
+      } finally {
+        setChildStatusUpdatingId((current) =>
+          current === workItemId ? null : current
+        );
+      }
+    },
+    [loadChildCounts, workItems]
   );
 
   const handleCreateChildTask = useCallback(async () => {
@@ -954,9 +1182,6 @@ export default function ReleaseTrackingPage() {
                           <th className="p-3 text-left font-normal text-muted-foreground text-sm" style={{ width: "240px" }}>
                             Tags
                           </th>
-                          <th className="p-3 text-left font-normal text-muted-foreground text-sm" style={{ width: "160px" }}>
-                            Created
-                          </th>
                           <th className="p-3 text-right font-normal text-muted-foreground text-sm" style={{ width: "80px" }}>
                             Actions
                           </th>
@@ -1002,10 +1227,12 @@ export default function ReleaseTrackingPage() {
                               ? childCountsByTitle[String(externalId)] ?? {
                                   tasks: 0,
                                   bugs: 0,
+                                  completedTasks: 0,
                                 }
                               : {
                                   tasks: 0,
                                   bugs: 0,
+                                  completedTasks: 0,
                                 };
 
                           const getRowClass = () => {
@@ -1171,7 +1398,9 @@ export default function ReleaseTrackingPage() {
                                       >
                                         <span className="inline-flex items-center gap-1">
                                           <ListTodo className="w-3 h-3" aria-hidden="true" />
-                                          {loadingChildCounts ? "?" : childCounts.tasks}
+                                          {loadingChildCounts
+                                            ? "?/?"
+                                            : `${childCounts.completedTasks}/${childCounts.tasks}`}
                                         </span>
                                       </Badge>
                                       <Badge
@@ -1220,11 +1449,6 @@ export default function ReleaseTrackingPage() {
                                   <span className="text-muted-foreground text-sm">-</span>
                                 )}
                               </td>
-                              <td className="py-2 px-3 text-xs text-muted-foreground">
-                                {item.created_at
-                                  ? format(new Date(item.created_at), "dd MMM yyyy")
-                                  : "-"}
-                              </td>
                               <td className="py-2 px-3 text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1238,6 +1462,33 @@ export default function ReleaseTrackingPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <span>Change Status</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuSubContent>
+                                        {getReleaseWorkItemStatusOptions().map((statusOption) => (
+                                          <DropdownMenuItem
+                                            key={`${item.id}-${statusOption}`}
+                                            disabled={
+                                              releaseStatusUpdatingItemId === item.id ||
+                                              (item.state || "New").toLowerCase() ===
+                                                statusOption.toLowerCase() ||
+                                              item.external_source !== "azure_devops" ||
+                                              !item.external_id
+                                            }
+                                            onClick={() =>
+                                              void handleReleaseWorkItemStatusChange(
+                                                item,
+                                                statusOption
+                                              )
+                                            }
+                                          >
+                                            {statusOption}
+                                          </DropdownMenuItem>
+                                        ))}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
                                     <DropdownMenuItem
                                       disabled={blockerTaskLoadingItemId === item.id}
                                       onClick={() => void handleOpenBlockers(item)}
@@ -1348,26 +1599,109 @@ export default function ReleaseTrackingPage() {
                     No child tasks or bugs found.
                   </p>
                 ) : (
-                  <div className="space-y-1">
-                    {existingChildTasks.map((task) => (
-                      <div key={task.id} className="rounded border px-2 py-1 text-[11px]">
-                        {canOpenAzureDevOpsItem ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAzureDevOpsItemById(task.id)}
-                            className="font-medium break-words text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left"
-                            title={`Open #${task.id} in Azure DevOps`}
-                          >
-                            {task.title}
-                          </button>
-                        ) : (
-                          <div className="font-medium break-words">{task.title}</div>
-                        )}
-                        <div className="text-muted-foreground">
-                          #{task.id} {task.type} - {task.status || "Unknown"}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="rounded-md border overflow-hidden">
+                    <div className="max-h-56 overflow-auto">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-muted sticky top-0 z-10">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                              Work item
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {existingChildTasks.map((task) => (
+                            <tr key={task.id} className={getStatusRowClass(task.status)}>
+                              <td className="px-2 py-1.5 align-top min-w-0">
+                                <div className="flex flex-col gap-0.5 min-w-0">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <div
+                                      className="flex items-center justify-center flex-shrink-0"
+                                      title={task.type.toLowerCase() === "bug" ? "Bug" : "Task"}
+                                    >
+                                      {task.type.toLowerCase() === "bug" ? (
+                                        <Bug className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
+                                      ) : (
+                                        <ListTodo className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                      )}
+                                    </div>
+                                    <Badge variant="outline" className="h-4 px-1.5 text-[10px] flex-shrink-0">
+                                      #{task.id}
+                                    </Badge>
+                                    <Badge
+                                      variant="outline"
+                                      className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${getStatusBadgeClass(task.status)}`}
+                                    >
+                                      {task.status || "Unknown"}
+                                    </Badge>
+                                    <div className="min-w-0 flex-1">
+                                      {canOpenAzureDevOpsItem ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenAzureDevOpsItemById(task.id)}
+                                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left truncate block w-full font-medium"
+                                          title={`${task.title} - Open in Azure DevOps`}
+                                        >
+                                          {task.title}
+                                        </button>
+                                      ) : (
+                                        <div className="truncate font-medium" title={task.title}>
+                                          {task.title}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 flex-shrink-0 opacity-70 hover:opacity-100"
+                                          disabled={childStatusUpdatingId === task.id}
+                                          title="Actions"
+                                        >
+                                          <MoreVertical className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-44">
+                                        <DropdownMenuSub>
+                                          <DropdownMenuSubTrigger>
+                                            <span>Change Status</span>
+                                          </DropdownMenuSubTrigger>
+                                          <DropdownMenuSubContent>
+                                            {getChildStatusOptions(task.type).map((statusOption) => (
+                                              <DropdownMenuItem
+                                                key={`${task.id}-${statusOption}`}
+                                                disabled={
+                                                  childStatusUpdatingId === task.id ||
+                                                  (task.status || "New").toLowerCase() ===
+                                                    statusOption.toLowerCase()
+                                                }
+                                                onClick={() =>
+                                                  void handleChildStatusChange(
+                                                    task.id,
+                                                    task.type,
+                                                    statusOption
+                                                  )
+                                                }
+                                              >
+                                                {statusOption}
+                                              </DropdownMenuItem>
+                                            ))}
+                                          </DropdownMenuSubContent>
+                                        </DropdownMenuSub>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground pl-5">
+                                    Assigned to: {task.assignedTo || "-"}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
                 {existingChildTasksError && (
@@ -1563,49 +1897,111 @@ export default function ReleaseTrackingPage() {
                 {childItemsDialogError}
               </p>
             ) : (
-              <div className="space-y-2">
-                {childItemsDialogItems
-                  .filter((childItem) =>
-                    showChildItemsDialog.filter === "task"
-                      ? childItem.type.toLowerCase() === "task"
-                      : childItem.type.toLowerCase() === "bug"
-                  )
-                  .map((childItem) => (
-                    <div
-                      key={childItem.id}
-                      className="rounded-md border p-3 flex items-start justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        {canOpenAzureDevOpsItem ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAzureDevOpsItemById(childItem.id)}
-                            className="text-sm font-medium break-words text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left"
-                            title={`Open #${childItem.id} in Azure DevOps`}
-                          >
-                            #{childItem.id} {childItem.title}
-                          </button>
-                        ) : (
-                          <div className="text-sm font-medium break-words">
-                            #{childItem.id} {childItem.title}
-                          </div>
-                        )}
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {childItem.status || "Unknown"}
-                          {childItem.assignedTo ? ` | ${childItem.assignedTo}` : ""}
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-xs shrink-0">
-                        {childItem.type}
-                      </Badge>
-                    </div>
-                  ))}
-                {childItemsDialogItems.filter((childItem) =>
-                  showChildItemsDialog.filter === "task"
-                    ? childItem.type.toLowerCase() === "task"
-                    : childItem.type.toLowerCase() === "bug"
-                ).length === 0 && (
-                  <p className="text-sm text-muted-foreground">
+              <div className="rounded-md border overflow-hidden">
+                <div className="max-h-[60vh] overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted sticky top-0 z-10">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                          Work item
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredChildItemsDialog.map((childItem) => (
+                        <tr key={childItem.id} className={getStatusRowClass(childItem.status)}>
+                          <td className="px-3 py-2 align-top min-w-0">
+                            <div className="flex flex-col gap-1 min-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div
+                                  className="flex items-center justify-center flex-shrink-0"
+                                  title={childItem.type.toLowerCase() === "bug" ? "Bug" : "Task"}
+                                >
+                                  {childItem.type.toLowerCase() === "bug" ? (
+                                    <Bug className="w-4 h-4 text-red-600 dark:text-red-500" />
+                                  ) : (
+                                    <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                  )}
+                                </div>
+                                <Badge variant="outline" className="h-5 px-2 text-xs flex-shrink-0">
+                                  #{childItem.id}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={`h-5 px-2 text-xs flex-shrink-0 ${getStatusBadgeClass(childItem.status)}`}
+                                >
+                                  {childItem.status || "Unknown"}
+                                </Badge>
+                                <div className="min-w-0 flex-1">
+                                  {canOpenAzureDevOpsItem ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAzureDevOpsItemById(childItem.id)}
+                                      className="font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline text-left truncate block w-full"
+                                      title={`${childItem.title} - Open in Azure DevOps`}
+                                    >
+                                      {childItem.title}
+                                    </button>
+                                  ) : (
+                                    <div className="font-medium truncate" title={childItem.title}>
+                                      {childItem.title}
+                                    </div>
+                                  )}
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 flex-shrink-0 opacity-70 hover:opacity-100"
+                                      disabled={childStatusUpdatingId === childItem.id}
+                                      title="Actions"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44">
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <span>Change Status</span>
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuSubContent>
+                                        {getChildStatusOptions(childItem.type).map((statusOption) => (
+                                          <DropdownMenuItem
+                                            key={`${childItem.id}-${statusOption}`}
+                                            disabled={
+                                              childStatusUpdatingId === childItem.id ||
+                                              (childItem.status || "New").toLowerCase() ===
+                                                statusOption.toLowerCase()
+                                            }
+                                            onClick={() =>
+                                              void handleChildStatusChange(
+                                                childItem.id,
+                                                childItem.type,
+                                                statusOption
+                                              )
+                                            }
+                                          >
+                                            {statusOption}
+                                          </DropdownMenuItem>
+                                        ))}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              <div className="text-xs text-muted-foreground pl-6">
+                                Assigned to: {childItem.assignedTo || "-"}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredChildItemsDialog.length === 0 && (
+                  <p className="text-sm text-muted-foreground p-3 border-t border-border">
                     No {showChildItemsDialog.filter === "task" ? "tasks" : "bugs"} found.
                   </p>
                 )}
