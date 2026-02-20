@@ -61,6 +61,7 @@ export interface AzureDevOpsWorkItem {
   type: string;
   state: string;
   tags?: string[];
+  isImported?: boolean;
 }
 
 export interface DayOff {

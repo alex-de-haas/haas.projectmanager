@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { AzureDevOpsWorkItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ReleaseImportModalProps {
   releaseId: number;
@@ -23,63 +30,41 @@ interface ReleaseImportModalProps {
   onSuccess: () => void;
 }
 
+type PageSizeOption = "10" | "20" | "50";
+
 export default function ReleaseImportModal({
   releaseId,
   onClose,
   onSuccess,
 }: ReleaseImportModalProps) {
   const [workItems, setWorkItems] = useState<AzureDevOpsWorkItem[]>([]);
-  const [filteredWorkItems, setFilteredWorkItems] = useState<
-    AzureDevOpsWorkItem[]
-  >([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [filterText, setFilterText] = useState("");
+  const [appliedFilter, setAppliedFilter] = useState("");
+  const [pageSize, setPageSize] = useState<PageSizeOption>("20");
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "info">(
     "info"
   );
 
-  useEffect(() => {
-    fetchWorkItems();
-  }, []);
-
-  useEffect(() => {
-    if (filterText.trim() === "") {
-      setFilteredWorkItems(workItems);
-    } else {
-      const searchText = filterText.toLowerCase();
-      const isNumericSearch = /^\d+$/.test(filterText.trim());
-      
-      // If searching by number, fetch including that specific ID
-      if (isNumericSearch) {
-        const searchId = Number(filterText.trim());
-        fetchWorkItems(searchId);
-      } else {
-        const filtered = workItems.filter(
-          (item) =>
-            item.id.toString().includes(searchText) ||
-            item.title.toLowerCase().includes(searchText)
-        );
-        setFilteredWorkItems(filtered);
-      }
-    }
-  }, [filterText, workItems]);
-
-  const fetchWorkItems = async (specificId?: number) => {
+  const fetchWorkItems = useCallback(async (searchTerm: string, limit: number) => {
+    const trimmedSearch = searchTerm.trim();
     try {
       setLoading(true);
-      let url = `/api/azure-devops/user-stories?releaseId=${releaseId}`;
-      if (specificId) {
-        url += `&specificId=${specificId}`;
+      let url = `/api/azure-devops/user-stories?releaseId=${releaseId}&limit=${limit}`;
+      if (trimmedSearch) {
+        url += `&search=${encodeURIComponent(trimmedSearch)}`;
       }
+
       const response = await fetch(url);
       const data = await response.json();
 
       if (response.ok) {
         setWorkItems(data.workItems || []);
-        setFilteredWorkItems(data.workItems || []);
+        setSelectedIds(new Set());
+        setAppliedFilter(trimmedSearch);
       } else {
         setMessage(
           `Error: Failed to fetch user stories: ${data.error || "Unknown error"}`
@@ -92,13 +77,33 @@ export default function ReleaseImportModal({
     } finally {
       setLoading(false);
     }
+  }, [releaseId]);
+
+  useEffect(() => {
+    fetchWorkItems("", 20);
+  }, [fetchWorkItems]);
+
+  const handleSearch = () => {
+    fetchWorkItems(filterText, Number(pageSize));
   };
 
+  const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    handleSearch();
+  };
+
+  const handlePageSizeChange = (value: PageSizeOption) => {
+    setPageSize(value);
+    fetchWorkItems(appliedFilter, Number(value));
+  };
+
+  const selectableWorkItems = workItems.filter((item) => !item.isImported);
+
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredWorkItems.length) {
+    if (selectedIds.size === selectableWorkItems.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredWorkItems.map((item) => item.id)));
+      setSelectedIds(new Set(selectableWorkItems.map((item) => item.id)));
     }
   };
 
@@ -160,10 +165,10 @@ export default function ReleaseImportModal({
   };
 
   const allSelected =
-    filteredWorkItems.length > 0 &&
-    selectedIds.size === filteredWorkItems.length;
+    selectableWorkItems.length > 0 &&
+    selectedIds.size === selectableWorkItems.length;
   const someSelected =
-    selectedIds.size > 0 && selectedIds.size < filteredWorkItems.length;
+    selectedIds.size > 0 && selectedIds.size < selectableWorkItems.length;
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -175,17 +180,42 @@ export default function ReleaseImportModal({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-2">
+          <form className="space-y-2" onSubmit={handleSearchSubmit}>
             <Label htmlFor="filter">Search by ID or Title</Label>
-            <Input
-              id="filter"
-              type="text"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Filter by ID or title..."
-              disabled={loading || importing}
-            />
-          </div>
+            <div className="flex gap-2">
+              <Input
+                id="filter"
+                type="text"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder="Enter ID or title and press Search"
+                disabled={loading || importing}
+              />
+              <Button type="submit" variant="secondary" disabled={loading || importing}>
+                Search
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="page-size">Items to show</Label>
+              <Select
+                value={pageSize}
+                onValueChange={(value) => handlePageSizeChange(value as PageSizeOption)}
+                disabled={loading || importing}
+              >
+                <SelectTrigger id="page-size" className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Showing up to {pageSize} user stories, sorted by last modified date.
+            </p>
+          </form>
 
           {loading ? (
             <div className="space-y-2">
@@ -193,11 +223,11 @@ export default function ReleaseImportModal({
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : filteredWorkItems.length === 0 ? (
+          ) : workItems.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {workItems.length === 0
-                ? "No user stories available to import"
-                : "No user stories match your filter"}
+              {appliedFilter
+                ? "No user stories match your search"
+                : "No user stories available to import"}
             </div>
           ) : (
             <div className="border rounded-md max-h-[400px] overflow-y-auto">
@@ -213,7 +243,7 @@ export default function ReleaseImportModal({
                         }}
                         onChange={toggleSelectAll}
                         className="h-4 w-4"
-                        disabled={importing}
+                        disabled={importing || selectableWorkItems.length === 0}
                       />
                     </th>
                     <th className="p-2 text-left w-20">ID</th>
@@ -224,11 +254,19 @@ export default function ReleaseImportModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredWorkItems.map((item) => (
+                  {workItems.map((item) => (
                     <tr
                       key={item.id}
-                      className="border-t hover:bg-muted/50 cursor-pointer"
-                      onClick={() => toggleSelect(item.id)}
+                      className={`border-t ${
+                        item.isImported
+                          ? "bg-muted/40 text-muted-foreground"
+                          : "hover:bg-muted/50 cursor-pointer"
+                      }`}
+                      onClick={() => {
+                        if (!item.isImported) {
+                          toggleSelect(item.id);
+                        }
+                      }}
                     >
                       <td className="p-2">
                         <input
@@ -236,7 +274,7 @@ export default function ReleaseImportModal({
                           checked={selectedIds.has(item.id)}
                           onChange={() => toggleSelect(item.id)}
                           className="h-4 w-4"
-                          disabled={importing}
+                          disabled={importing || item.isImported}
                           onClick={(e) => e.stopPropagation()}
                         />
                       </td>
@@ -249,7 +287,9 @@ export default function ReleaseImportModal({
                         <Badge variant="secondary">{item.state}</Badge>
                       </td>
                       <td className="p-2">
-                        {item.tags && item.tags.length > 0 ? (
+                        {item.isImported ? (
+                          <Badge variant="secondary">Already imported</Badge>
+                        ) : item.tags && item.tags.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {item.tags.map((tag, idx) => (
                               <Badge key={idx} variant="outline" className="text-xs">

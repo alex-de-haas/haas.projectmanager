@@ -18,19 +18,16 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const releaseIdParam = searchParams.get("releaseId");
     const releaseId = releaseIdParam ? Number(releaseIdParam) : null;
-    const specificIdParam = searchParams.get("specificId");
-    const specificId = specificIdParam ? Number(specificIdParam) : null;
+    const searchParam = (searchParams.get("search") || "").trim();
+    const searchText = searchParam.length > 0 ? searchParam : null;
+    const limitParam = searchParams.get("limit");
+    const parsedLimit = limitParam ? Number(limitParam) : 20;
+    const allowedLimits = new Set([10, 20, 50]);
+    const resultLimit = allowedLimits.has(parsedLimit) ? parsedLimit : 20;
 
     if (releaseIdParam && Number.isNaN(releaseId)) {
       return NextResponse.json(
         { error: "Release id must be a number" },
-        { status: 400 }
-      );
-    }
-
-    if (specificIdParam && Number.isNaN(specificId)) {
-      return NextResponse.json(
-        { error: "Specific id must be a number" },
         { status: 400 }
       );
     }
@@ -76,7 +73,18 @@ export async function GET(request: NextRequest) {
     const witApi: WorkItemTrackingApi =
       await connection.getWorkItemTrackingApi();
 
-    let wiqlQuery = `
+    const escapedSearchText = searchText
+      ? searchText.replace(/'/g, "''")
+      : null;
+    const isNumericSearch = searchText ? /^\d+$/.test(searchText) : false;
+    const searchClause = searchText
+      ? isNumericSearch
+        ? `AND ([System.Title] CONTAINS '${escapedSearchText}' OR [System.Id] = ${Number(
+            searchText
+          )})`
+        : `AND [System.Title] CONTAINS '${escapedSearchText}'`
+      : "";
+    const wiqlQuery = `
       SELECT [System.Id]
       FROM WorkItems
       WHERE [System.WorkItemType] = 'User Story'
@@ -84,33 +92,18 @@ export async function GET(request: NextRequest) {
         AND [System.State] <> 'Removed'
         AND [System.State] <> 'Released'
         AND [System.State] <> 'Resolved'
+        ${searchClause}
       ORDER BY [System.ChangedDate] DESC
     `;
 
-    // If specific ID is provided, include it regardless of state
-    if (specificId) {
-      wiqlQuery = `
-        SELECT [System.Id]
-        FROM WorkItems
-        WHERE (
-          (
-            [System.WorkItemType] = 'User Story'
-            AND [System.State] <> 'Closed'
-            AND [System.State] <> 'Removed'
-            AND [System.State] <> 'Released'
-            AND [System.State] <> 'Resolved'
-          )
-          OR [System.Id] = ${specificId}
-        )
-        ORDER BY [System.ChangedDate] DESC
-      `;
-    }
-
     const wiql = { query: wiqlQuery };
 
-    const queryResult = await witApi.queryByWiql(wiql, {
-      project: settings.project,
-    });
+    const queryResult = await witApi.queryByWiql(
+      wiql,
+      { project: settings.project },
+      undefined,
+      resultLimit
+    );
     const workItemIds =
       queryResult?.workItems?.map((wi) => wi.id!).filter(Boolean) || [];
 
@@ -162,20 +155,45 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const result: AzureDevOpsWorkItem[] = (workItems || [])
+    const rankedWorkItems: Array<AzureDevOpsWorkItem & { changedAtTs: number }> = (
+      workItems || []
+    )
       .filter((wi) => wi.id && wi.fields)
       .map((wi) => {
+        const id = wi.id!;
         const tagsString = wi.fields?.["System.Tags"] as string | undefined;
-        const tags = tagsString ? tagsString.split(';').map(t => t.trim()).filter(Boolean) : [];
+        const tags = tagsString
+          ? tagsString
+              .split(";")
+              .map((t) => t.trim())
+              .filter(Boolean)
+          : [];
+        const changedDateValue = wi.fields?.["System.ChangedDate"];
+        const changedAtTs =
+          typeof changedDateValue === "string" ||
+          changedDateValue instanceof Date
+            ? new Date(changedDateValue).getTime()
+            : 0;
         return {
-          id: wi.id!,
+          id,
           title: wi.fields?.["System.Title"] || "Untitled",
           type: wi.fields?.["System.WorkItemType"] || "Unknown",
           state: wi.fields?.["System.State"] || "Unknown",
           tags: tags.length > 0 ? tags : undefined,
+          isImported: importedIds.has(id),
+          changedAtTs,
         };
       })
-      .filter((item) => !importedIds.has(item.id));
+      .sort((a, b) => {
+        if (a.isImported !== b.isImported) {
+          return a.isImported ? 1 : -1;
+        }
+        return b.changedAtTs - a.changedAtTs;
+      });
+
+    const result: AzureDevOpsWorkItem[] = rankedWorkItems
+      .slice(0, resultLimit)
+      .map(({ changedAtTs, ...item }) => item);
 
     return NextResponse.json({ workItems: result });
   } catch (error) {
