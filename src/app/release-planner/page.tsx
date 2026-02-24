@@ -130,7 +130,7 @@ function SortableRow({
 
   return (
     <tr ref={setNodeRef} style={style} className={rowClassName}>
-      <td className={`py-2 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
+      <td className={`py-1.5 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
         <div
           {...attributes}
           {...listeners}
@@ -1328,22 +1328,22 @@ export default function ReleaseTrackingPage() {
                             if (hasBlockers) {
                               switch (highestSeverity) {
                                 case "critical":
-                                  return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
+                                  return "py-1.5 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
                                 case "high":
-                                  return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
+                                  return "py-1.5 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
                                 case "medium":
-                                  return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
+                                  return "py-1.5 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
                                 case "low":
-                                  return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                                  return "py-1.5 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                               }
                             }
                             if (itemState === "done" || itemState === "resolved" || itemState === "closed") {
-                              return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
+                              return "py-1.5 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                             }
                             if (itemState === "active") {
-                              return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                              return "py-1.5 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                             }
-                            return "py-2 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
+                            return "py-1.5 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
                           };
 
                           const getDragHandleBgClass = () => {
@@ -1603,7 +1603,7 @@ export default function ReleaseTrackingPage() {
                                   </DropdownMenu>
                                 </div>
                               </td>
-                              <td className="py-2 px-3">
+                              <td className="py-1.5 px-3">
                                 {item.tags ? (
                                   <div className="flex flex-wrap gap-1">
                                     {item.tags.split(";").map((tag, idx) => (
@@ -1618,7 +1618,7 @@ export default function ReleaseTrackingPage() {
                                   <span className="text-muted-foreground text-sm">-</span>
                                 )}
                               </td>
-                              <td className="py-2 px-3 align-top">
+                              <td className="py-1.5 px-3 align-top">
                                 {item.notes ? (
                                   <p
                                     className="text-sm text-foreground break-words whitespace-pre-wrap"

@@ -111,7 +111,7 @@ function SortableRow({ id, children, rowClassName, dragHandleBgClassName }: Sort
 
   return (
     <tr ref={setNodeRef} style={style} className={rowClassName}>
-      <td className={`py-2 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
+      <td className={`py-1.5 px-3 ${dragHandleBgClassName}`} style={{ width: "40px" }}>
         <div
           {...attributes}
           {...listeners}
@@ -958,7 +958,7 @@ export default function Home() {
                 <th className="p-3 sticky left-0 bg-muted dark:bg-muted z-[21]" style={{ width: "40px" }}>
                   {/* Drag handle column */}
                 </th>
-                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden" style={{ minWidth: "200px", maxWidth: "33vw" }}>
+                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden" style={{ minWidth: "180px", maxWidth: "28vw" }}>
                   {/* Empty for task names */}
                 </th>
                 {calendarDays.map((day) => {
@@ -996,7 +996,7 @@ export default function Home() {
                     <th
                       key={day.key}
                       className={`p-3 text-center font-normal text-sm ${headerClass}`}
-                      style={{ minWidth: "100px", width: "100px" }}
+                      style={{ minWidth: "84px", width: "84px" }}
                       title={title}
                     >
                       <div className={`font-medium ${textClass}`}>
@@ -1016,7 +1016,7 @@ export default function Home() {
                 })}
                 <th
                   className="p-3 text-center font-normal text-muted-foreground text-sm bg-muted dark:bg-muted sticky right-0 z-[21]"
-                  style={{ minWidth: "100px", width: "100px" }}
+                  style={{ minWidth: "84px", width: "84px" }}
                 >
                   Total
                 </th>
@@ -1073,22 +1073,22 @@ export default function Home() {
                   if (hasBlockers) {
                     switch (highestSeverity) {
                       case 'critical':
-                        return "py-2 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
+                        return "py-1.5 px-3 sticky left-[40px] bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900 z-10";
                       case 'high':
-                        return "py-2 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
+                        return "py-1.5 px-3 sticky left-[40px] bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900 z-10";
                       case 'medium':
-                        return "py-2 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
+                        return "py-1.5 px-3 sticky left-[40px] bg-yellow-100 group-hover:bg-yellow-200 dark:bg-yellow-950 dark:group-hover:bg-yellow-900 z-10";
                       case 'low':
-                        return "py-2 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                        return "py-1.5 px-3 sticky left-[40px] bg-blue-100 group-hover:bg-blue-200 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                     }
                   }
                   const status = task.status?.toLowerCase();
                   if (status === 'active') {
-                    return "py-2 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
+                    return "py-1.5 px-3 sticky left-[40px] bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950 dark:group-hover:bg-blue-900 z-10";
                   } else if (status === 'resolved' || status === 'closed') {
-                    return "py-2 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
+                    return "py-1.5 px-3 sticky left-[40px] bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900 z-10";
                   }
-                  return "py-2 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
+                  return "py-1.5 px-3 sticky left-[40px] bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted z-10";
                 };
 
                 // Get drag handle background color
@@ -1123,7 +1123,7 @@ export default function Home() {
                   >
                     <td
                       className={getStickyBgClass()}
-                      style={{ minWidth: "200px", maxWidth: "33vw" }}
+                      style={{ minWidth: "180px", maxWidth: "28vw" }}
                     >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
@@ -1247,19 +1247,6 @@ export default function Home() {
                               task.title
                             )}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span title={`Created: ${format(new Date(task.created_at), "PPpp")}`}>
-                            Created: {format(new Date(task.created_at), "dd MMM yyyy")}
-                          </span>
-                          {task.completed_at && (
-                            <>
-                              <span className="text-border">•</span>
-                              <span title={`Completed: ${format(new Date(task.completed_at), "PPpp")}`}>
-                                Completed: {format(new Date(task.completed_at), "dd MMM yyyy")}
-                              </span>
-                            </>
-                          )}
                         </div>
                       </div>
                       <DropdownMenu>
@@ -1458,11 +1445,11 @@ export default function Home() {
                     return (
                       <td
                         key={day.key}
-                        className={`py-2 px-3 text-center cursor-pointer ${cellClass}`}
+                        className={`py-1.5 px-3 text-center cursor-pointer ${cellClass}`}
                         onClick={() =>
                           !isEditing && handleCellClick(task.id, day.key, hours)
                         }
-                        style={{ minWidth: "100px", width: "100px" }}
+                        style={{ minWidth: "84px", width: "84px" }}
                       >
                         {isEditing ? (
                           <Input
@@ -1487,7 +1474,7 @@ export default function Home() {
                     );
                   })}
                   <td
-                    className={`py-2 px-3 text-center font-semibold text-sm text-foreground sticky right-0 z-10 ${
+                    className={`py-1.5 px-3 text-center font-semibold text-sm text-foreground sticky right-0 z-10 ${
                       hasBlockers 
                         ? highestSeverity === 'critical' ? 'bg-red-100 group-hover:bg-red-200 dark:bg-red-950 dark:group-hover:bg-red-900' :
                           highestSeverity === 'high' ? 'bg-orange-100 group-hover:bg-orange-200 dark:bg-orange-950 dark:group-hover:bg-orange-900' :
@@ -1497,7 +1484,7 @@ export default function Home() {
                           task.status?.toLowerCase() === 'resolved' || task.status?.toLowerCase() === 'closed' ? 'bg-green-50 group-hover:bg-green-100 dark:bg-green-950 dark:group-hover:bg-green-900' :
                           'bg-background dark:bg-card group-hover:bg-muted dark:group-hover:bg-muted'
                     }`}
-                    style={{ minWidth: "100px", width: "100px" }}
+                    style={{ minWidth: "84px", width: "84px" }}
                   >
                     {formatTimeDisplay(totalHoursByTask[taskIndex])}
                   </td>
@@ -1512,7 +1499,7 @@ export default function Home() {
                 <td className="p-3 sticky left-0 bg-muted dark:bg-muted z-[11]" style={{ width: "40px" }}>
                   {/* Empty drag handle cell */}
                 </td>
-                <td className="p-3 sticky left-[40px] bg-muted dark:bg-muted z-[11] overflow-hidden" style={{ minWidth: "200px", maxWidth: "33vw" }}>
+                <td className="p-3 sticky left-[40px] bg-muted dark:bg-muted z-[11] overflow-hidden" style={{ minWidth: "180px", maxWidth: "28vw" }}>
                   {/* Empty cell */}
                 </td>
                 {calendarDays.map((day, index) => {
@@ -1533,7 +1520,7 @@ export default function Home() {
                     <td
                       key={day.key}
                       className={`p-3 text-center font-semibold text-sm ${cellClass}`}
-                      style={{ minWidth: "100px", width: "100px" }}
+                      style={{ minWidth: "84px", width: "84px" }}
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         <span>{allTotal > 0 ? formatTimeDisplay(allTotal) : "0"}</span>
@@ -1552,7 +1539,7 @@ export default function Home() {
                 })}
                 <td
                   className="p-3 text-center font-bold text-sm text-foreground bg-muted dark:bg-muted sticky right-0 z-[11]"
-                  style={{ minWidth: "100px", width: "100px" }}
+                  style={{ minWidth: "84px", width: "84px" }}
                 >
                   <div className="flex flex-col items-center">
                     <span>{formatTimeDisplay(allGrandTotal)}</span>
