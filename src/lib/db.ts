@@ -201,6 +201,7 @@ const initDb = () => {
       work_item_type TEXT,
       state TEXT,
       tags TEXT,
+      notes TEXT,
       display_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -827,6 +828,24 @@ const initDb = () => {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_release_work_items_task_id ON release_work_items(task_id)"
     );
+  } catch (error) {
+    console.error("Migration error:", error);
+  }
+
+  // Migration: Add notes column to release_work_items table if it doesn't exist
+  try {
+    const releaseWorkItemsTableInfo = db
+      .prepare("PRAGMA table_info(release_work_items)")
+      .all() as Array<{ name: string }>;
+    const hasNotesColumn = releaseWorkItemsTableInfo.some(
+      (col) => col.name === "notes"
+    );
+
+    if (!hasNotesColumn) {
+      console.log("Adding notes column to release_work_items table...");
+      db.exec("ALTER TABLE release_work_items ADD COLUMN notes TEXT");
+      console.log("notes column added to release_work_items successfully");
+    }
   } catch (error) {
     console.error("Migration error:", error);
   }

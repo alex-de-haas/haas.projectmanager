@@ -164,6 +164,12 @@ export default function ReleaseTrackingPage() {
   const [moveWorkItemDialogOpen, setMoveWorkItemDialogOpen] = useState(false);
   const [selectedWorkItemToMove, setSelectedWorkItemToMove] = useState<ReleaseWorkItem | null>(null);
   const [selectedTargetReleaseId, setSelectedTargetReleaseId] = useState<string>("");
+  const [showNotesDialog, setShowNotesDialog] = useState<{
+    workItemId: number;
+    workItemTitle: string;
+  } | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSavingWorkItemId, setNotesSavingWorkItemId] = useState<number | null>(null);
   const [showCreateChild, setShowCreateChild] = useState<{
     workItemId: number;
     workItemTitle: string;
@@ -677,6 +683,58 @@ export default function ReleaseTrackingPage() {
     }
   };
 
+  const handleOpenNotesDialog = (item: ReleaseWorkItem) => {
+    setShowNotesDialog({
+      workItemId: item.id,
+      workItemTitle: item.title,
+    });
+    setNotesDraft(item.notes ?? "");
+  };
+
+  const handleSaveNotes = async () => {
+    if (!showNotesDialog) return;
+
+    const workItemId = showNotesDialog.workItemId;
+    setNotesSavingWorkItemId(workItemId);
+
+    try {
+      const response = await fetch(`/api/releases/work-items/${workItemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notes: notesDraft,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || "Failed to save notes");
+      }
+
+      const normalizedNotes = notesDraft.trim();
+      setWorkItems((previous) =>
+        previous.map((item) =>
+          item.id === workItemId
+            ? {
+                ...item,
+                notes: normalizedNotes.length > 0 ? normalizedNotes : null,
+              }
+            : item
+        )
+      );
+      toast.success(normalizedNotes.length > 0 ? "Notes saved" : "Notes cleared");
+      setShowNotesDialog(null);
+      setNotesDraft("");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save notes";
+      toast.error(message);
+    } finally {
+      setNotesSavingWorkItemId((current) =>
+        current === workItemId ? null : current
+      );
+    }
+  };
+
   const handleRemoveWorkItem = async (workItemId: number) => {
     try {
       const response = await fetch(`/api/releases/work-items?id=${workItemId}`, {
@@ -1176,14 +1234,23 @@ export default function ReleaseTrackingPage() {
                           <th className="p-3 sticky left-0 bg-muted z-10" style={{ width: "40px" }}>
                             {/* Drag handle column */}
                           </th>
-                          <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted z-10" style={{ minWidth: "240px" }}>
+                          <th
+                            className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted z-10 overflow-hidden"
+                            style={{ width: "40%", minWidth: "240px", maxWidth: "40vw" }}
+                          >
                             Work item
                           </th>
-                          <th className="p-3 text-left font-normal text-muted-foreground text-sm" style={{ width: "240px" }}>
+                          <th
+                            className="p-3 text-left font-normal text-muted-foreground text-sm"
+                            style={{ width: "30%", minWidth: "220px" }}
+                          >
                             Tags
                           </th>
-                          <th className="p-3 text-right font-normal text-muted-foreground text-sm" style={{ width: "80px" }}>
-                            Actions
+                          <th
+                            className="p-3 text-left font-normal text-muted-foreground text-sm"
+                            style={{ width: "30%", minWidth: "220px" }}
+                          >
+                            Notes
                           </th>
                         </tr>
                       </thead>
@@ -1310,128 +1377,230 @@ export default function ReleaseTrackingPage() {
                             >
                               <td
                                 className={getStickyBgClass()}
-                                style={{ minWidth: "240px" }}
+                                style={{ width: "40%", minWidth: "240px", maxWidth: "40vw" }}
                               >
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className="flex items-center justify-center flex-shrink-0 w-5 h-5">
-                                    <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                                  </div>
-                                  {item.external_id && (
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <div className="flex items-center justify-center flex-shrink-0 w-5 h-5">
+                                      <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                    </div>
+                                    {item.external_id && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs font-mono font-semibold"
+                                      >
+                                        {Math.floor(Number(item.external_id))}
+                                      </Badge>
+                                    )}
+                                    {hasBlockers && (
+                                      <HoverCard openDelay={100} closeDelay={100}>
+                                        <HoverCardTrigger>
+                                          <Badge
+                                            variant="outline"
+                                            className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                                            onClick={() => void handleOpenBlockers(item)}
+                                            title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+                                          >
+                                            <ShieldAlert className="w-3 h-3" />
+                                            <span className="font-semibold">{activeBlockers.length}</span>
+                                          </Badge>
+                                        </HoverCardTrigger>
+                                        <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
+                                          <div className="space-y-2">
+                                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                                              <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
+                                              Active Blockers ({activeBlockers.length})
+                                            </h4>
+                                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                              {activeBlockers.map((blocker) => (
+                                                <div
+                                                  key={blocker.id}
+                                                  className="text-xs border rounded-md p-2 bg-background"
+                                                >
+                                                  <div className="flex items-start justify-between gap-2 mb-1">
+                                                    <Badge
+                                                      variant="outline"
+                                                      className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
+                                                        blocker.severity === "critical"
+                                                          ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
+                                                          : blocker.severity === "high"
+                                                          ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800"
+                                                          : blocker.severity === "medium"
+                                                          ? "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800"
+                                                          : "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
+                                                      }`}
+                                                    >
+                                                      {blocker.severity}
+                                                    </Badge>
+                                                  </div>
+                                                  <p className="text-foreground">{blocker.comment}</p>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </HoverCardContent>
+                                      </HoverCard>
+                                    )}
                                     <Badge
                                       variant="outline"
-                                      className="text-xs font-mono font-semibold"
+                                      className={`text-xs ${
+                                        itemState === "done" || itemState === "resolved" || itemState === "closed"
+                                          ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
+                                          : itemState === "active"
+                                          ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
+                                          : "bg-muted text-muted-foreground border-border"
+                                      }`}
                                     >
-                                      {Math.floor(Number(item.external_id))}
+                                      {item.state || "New"}
                                     </Badge>
-                                  )}
-                                  {hasBlockers && (
-                                    <HoverCard openDelay={100} closeDelay={100}>
-                                      <HoverCardTrigger>
+                                    {item.external_source === "azure_devops" && item.external_id && (
+                                      <>
                                         <Badge
                                           variant="outline"
-                                          className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
-                                          onClick={() => void handleOpenBlockers(item)}
-                                          title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+                                          className="text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                            handleOpenChildItemsDialog(externalId, item.title, "task");
+                                          }}
                                         >
-                                          <ShieldAlert className="w-3 h-3" />
-                                          <span className="font-semibold">{activeBlockers.length}</span>
+                                          <span className="inline-flex items-center gap-1">
+                                            <ListTodo className="w-3 h-3" aria-hidden="true" />
+                                            {loadingChildCounts
+                                              ? "?/?"
+                                              : `${childCounts.completedTasks}/${childCounts.tasks}`}
+                                          </span>
                                         </Badge>
-                                      </HoverCardTrigger>
-                                      <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
-                                        <div className="space-y-2">
-                                          <h4 className="text-sm font-semibold flex items-center gap-2">
-                                            <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
-                                            Active Blockers ({activeBlockers.length})
-                                          </h4>
-                                          <div className="space-y-2 max-h-60 overflow-y-auto">
-                                            {activeBlockers.map((blocker) => (
-                                              <div
-                                                key={blocker.id}
-                                                className="text-xs border rounded-md p-2 bg-background"
-                                              >
-                                                <div className="flex items-start justify-between gap-2 mb-1">
-                                                  <Badge
-                                                    variant="outline"
-                                                    className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
-                                                      blocker.severity === "critical"
-                                                        ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
-                                                        : blocker.severity === "high"
-                                                        ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800"
-                                                        : blocker.severity === "medium"
-                                                        ? "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800"
-                                                        : "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                                    }`}
-                                                  >
-                                                    {blocker.severity}
-                                                  </Badge>
-                                                </div>
-                                                <p className="text-foreground">{blocker.comment}</p>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      </HoverCardContent>
-                                    </HoverCard>
-                                  )}
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${
-                                      itemState === "done" || itemState === "resolved" || itemState === "closed"
-                                        ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-                                        : itemState === "active"
-                                        ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                        : "bg-muted text-muted-foreground border-border"
-                                    }`}
-                                  >
-                                    {item.state || "New"}
-                                  </Badge>
-                                  {item.external_source === "azure_devops" && item.external_id && (
-                                    <>
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          if (!Number.isInteger(externalId) || externalId <= 0) return;
-                                          handleOpenChildItemsDialog(externalId, item.title, "task");
-                                        }}
-                                      >
-                                        <span className="inline-flex items-center gap-1">
-                                          <ListTodo className="w-3 h-3" aria-hidden="true" />
-                                          {loadingChildCounts
-                                            ? "?/?"
-                                            : `${childCounts.completedTasks}/${childCounts.tasks}`}
-                                        </span>
-                                      </Badge>
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          if (!Number.isInteger(externalId) || externalId <= 0) return;
-                                          handleOpenChildItemsDialog(externalId, item.title, "bug");
-                                        }}
-                                      >
-                                        <span className="inline-flex items-center gap-1">
-                                          <Bug className="w-3 h-3" aria-hidden="true" />
-                                          {loadingChildCounts ? "?" : childCounts.bugs}
-                                        </span>
-                                      </Badge>
-                                    </>
-                                  )}
-                                  <div className="truncate text-sm font-medium min-w-0" title={item.title}>
-                                    {item.external_source === "azure_devops" && item.external_id ? (
-                                      <button
-                                        onClick={() => handleWorkItemClick(item)}
-                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
-                                        title={`${item.title} - Open in Azure DevOps`}
-                                      >
-                                        {item.title}
-                                      </button>
-                                    ) : (
-                                      <span className="text-foreground">{item.title}</span>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                            handleOpenChildItemsDialog(externalId, item.title, "bug");
+                                          }}
+                                        >
+                                          <span className="inline-flex items-center gap-1">
+                                            <Bug className="w-3 h-3" aria-hidden="true" />
+                                            {loadingChildCounts ? "?" : childCounts.bugs}
+                                          </span>
+                                        </Badge>
+                                      </>
                                     )}
+                                    <div className="truncate text-sm font-medium min-w-0 flex-1" title={item.title}>
+                                      {item.external_source === "azure_devops" && item.external_id ? (
+                                        <button
+                                          onClick={() => handleWorkItemClick(item)}
+                                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
+                                          title={`${item.title} - Open in Azure DevOps`}
+                                        >
+                                          {item.title}
+                                        </button>
+                                      ) : (
+                                        <span className="text-foreground">{item.title}</span>
+                                      )}
+                                    </div>
                                   </div>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 flex-shrink-0 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+                                        title="Actions"
+                                      >
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48">
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                          <span>Change Status</span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                          {getReleaseWorkItemStatusOptions().map((statusOption) => (
+                                            <DropdownMenuItem
+                                              key={`${item.id}-${statusOption}`}
+                                              disabled={
+                                                releaseStatusUpdatingItemId === item.id ||
+                                                (item.state || "New").toLowerCase() ===
+                                                  statusOption.toLowerCase() ||
+                                                item.external_source !== "azure_devops" ||
+                                                !item.external_id
+                                              }
+                                              onClick={() =>
+                                                void handleReleaseWorkItemStatusChange(
+                                                  item,
+                                                  statusOption
+                                                )
+                                              }
+                                            >
+                                              {statusOption}
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
+                                      <DropdownMenuItem
+                                        disabled={blockerTaskLoadingItemId === item.id}
+                                        onClick={() => void handleOpenBlockers(item)}
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          <ShieldAlert className="h-4 w-4" />
+                                          <span>
+                                            {blockerTaskLoadingItemId === item.id
+                                              ? "Preparing..."
+                                              : "Manage Blockers"}
+                                          </span>
+                                          {hasBlockers && (
+                                            <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
+                                              {activeBlockers.length}
+                                            </Badge>
+                                          )}
+                                        </span>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        disabled={moveTargetReleases.length === 0}
+                                        onClick={() => {
+                                          setSelectedWorkItemToMove(item);
+                                          setSelectedTargetReleaseId("");
+                                          setMoveWorkItemDialogOpen(true);
+                                        }}
+                                      >
+                                        Move to release
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleOpenNotesDialog(item)}>
+                                        {item.notes ? "Edit note" : "Add note"}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setChildDisciplines(new Set());
+                                          const fallbackUserId = projectUsers[0]
+                                            ? String(projectUsers[0].id)
+                                            : "";
+                                          setChildUserByDiscipline((previous) => ({
+                                            backend: previous.backend || fallbackUserId,
+                                            frontend: previous.frontend || fallbackUserId,
+                                            design: previous.design || fallbackUserId,
+                                          }));
+                                          setShowCreateChild({
+                                            workItemId: item.id,
+                                            workItemTitle: item.title,
+                                            workItemExternalId: item.external_id
+                                              ? Number(item.external_id)
+                                              : null,
+                                          });
+                                        }}
+                                      >
+                                        Create child task
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => handleRemoveWorkItem(item.id)}
+                                        className="text-red-600 dark:text-red-400"
+                                      >
+                                        Remove from release
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </div>
                               </td>
                               <td className="py-2 px-3">
@@ -1449,104 +1618,23 @@ export default function ReleaseTrackingPage() {
                                   <span className="text-muted-foreground text-sm">-</span>
                                 )}
                               </td>
-                              <td className="py-2 px-3 text-right">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
-                                      title="Actions"
-                                    >
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger>
-                                        <span>Change Status</span>
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuSubContent>
-                                        {getReleaseWorkItemStatusOptions().map((statusOption) => (
-                                          <DropdownMenuItem
-                                            key={`${item.id}-${statusOption}`}
-                                            disabled={
-                                              releaseStatusUpdatingItemId === item.id ||
-                                              (item.state || "New").toLowerCase() ===
-                                                statusOption.toLowerCase() ||
-                                              item.external_source !== "azure_devops" ||
-                                              !item.external_id
-                                            }
-                                            onClick={() =>
-                                              void handleReleaseWorkItemStatusChange(
-                                                item,
-                                                statusOption
-                                              )
-                                            }
-                                          >
-                                            {statusOption}
-                                          </DropdownMenuItem>
-                                        ))}
-                                      </DropdownMenuSubContent>
-                                    </DropdownMenuSub>
-                                    <DropdownMenuItem
-                                      disabled={blockerTaskLoadingItemId === item.id}
-                                      onClick={() => void handleOpenBlockers(item)}
-                                    >
-                                      <span className="flex items-center gap-2">
-                                        <ShieldAlert className="h-4 w-4" />
-                                        <span>
-                                          {blockerTaskLoadingItemId === item.id
-                                            ? "Preparing..."
-                                            : "Manage Blockers"}
-                                        </span>
-                                        {hasBlockers && (
-                                          <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
-                                            {activeBlockers.length}
-                                          </Badge>
-                                        )}
-                                      </span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      disabled={moveTargetReleases.length === 0}
-                                      onClick={() => {
-                                        setSelectedWorkItemToMove(item);
-                                        setSelectedTargetReleaseId("");
-                                        setMoveWorkItemDialogOpen(true);
-                                      }}
-                                    >
-                                      Move to release
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setChildDisciplines(new Set());
-                                        const fallbackUserId = projectUsers[0]
-                                          ? String(projectUsers[0].id)
-                                          : "";
-                                        setChildUserByDiscipline((previous) => ({
-                                          backend: previous.backend || fallbackUserId,
-                                          frontend: previous.frontend || fallbackUserId,
-                                          design: previous.design || fallbackUserId,
-                                        }));
-                                        setShowCreateChild({
-                                          workItemId: item.id,
-                                          workItemTitle: item.title,
-                                          workItemExternalId: item.external_id
-                                            ? Number(item.external_id)
-                                            : null,
-                                        });
-                                      }}
-                                    >
-                                      Create child task
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => handleRemoveWorkItem(item.id)}
-                                      className="text-red-600 dark:text-red-400"
-                                    >
-                                      Remove from release
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                              <td className="py-2 px-3 align-top">
+                                {item.notes ? (
+                                  <p
+                                    className="text-sm text-foreground break-words whitespace-pre-wrap"
+                                    style={{
+                                      display: "-webkit-box",
+                                      WebkitLineClamp: 3,
+                                      WebkitBoxOrient: "vertical",
+                                      overflow: "hidden",
+                                    }}
+                                    title={item.notes}
+                                  >
+                                    {item.notes}
+                                  </p>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
                               </td>
                             </SortableRow>
                           );
@@ -1811,6 +1899,63 @@ export default function ReleaseTrackingPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showNotesDialog && (
+        <Dialog
+          open={!!showNotesDialog}
+          onOpenChange={(open) => {
+            if (!open && notesSavingWorkItemId === null) {
+              setShowNotesDialog(null);
+              setNotesDraft("");
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>
+                {workItems.find((item) => item.id === showNotesDialog.workItemId)?.notes
+                  ? "Edit note"
+                  : "Add note"}
+              </DialogTitle>
+              <DialogDescription>
+                {showNotesDialog.workItemTitle}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="work-item-notes">Notes</Label>
+              <textarea
+                id="work-item-notes"
+                value={notesDraft}
+                onChange={(event) => setNotesDraft(event.target.value)}
+                placeholder="Add implementation details, dependencies, risks, or any context..."
+                className="w-full min-h-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowNotesDialog(null);
+                  setNotesDraft("");
+                }}
+                disabled={notesSavingWorkItemId === showNotesDialog.workItemId}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveNotes()}
+                disabled={notesSavingWorkItemId === showNotesDialog.workItemId}
+              >
+                {notesSavingWorkItemId === showNotesDialog.workItemId
+                  ? "Saving..."
+                  : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {moveWorkItemDialogOpen && (
         <Dialog open={moveWorkItemDialogOpen} onOpenChange={setMoveWorkItemDialogOpen}>

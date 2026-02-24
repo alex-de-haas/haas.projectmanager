@@ -20,19 +20,18 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { release_id } = body;
-
-    if (!release_id) {
+    if (!body || typeof body !== "object") {
       return NextResponse.json(
-        { error: "Release id is required" },
+        { error: "Request body must be a JSON object" },
         { status: 400 }
       );
     }
+    const hasReleaseId = Object.prototype.hasOwnProperty.call(body, "release_id");
+    const hasNotes = Object.prototype.hasOwnProperty.call(body, "notes");
 
-    const releaseId = Number(release_id);
-    if (Number.isNaN(releaseId)) {
+    if (!hasReleaseId && !hasNotes) {
       return NextResponse.json(
-        { error: "Release id must be a number" },
+        { error: "No fields provided to update" },
         { status: 400 }
       );
     }
@@ -49,39 +48,77 @@ export async function PATCH(
       );
     }
 
-    // Check if the target release exists
-    const release = db
-      .prepare("SELECT * FROM releases WHERE id = ? AND project_id = ?")
-      .get(releaseId, projectId) as { id: number; status?: string } | undefined;
+    const fieldsToUpdate: string[] = [];
+    const updateValues: Array<number | string | null> = [];
 
-    if (!release) {
-      return NextResponse.json(
-        { error: "Target release not found" },
-        { status: 404 }
-      );
+    if (hasReleaseId) {
+      const releaseId = Number(body.release_id);
+      if (Number.isNaN(releaseId)) {
+        return NextResponse.json(
+          { error: "Release id must be a number" },
+          { status: 400 }
+        );
+      }
+
+      // Check if the target release exists
+      const release = db
+        .prepare("SELECT * FROM releases WHERE id = ? AND project_id = ?")
+        .get(releaseId, projectId) as { id: number; status?: string } | undefined;
+
+      if (!release) {
+        return NextResponse.json(
+          { error: "Target release not found" },
+          { status: 404 }
+        );
+      }
+
+      if (release.status === "completed") {
+        return NextResponse.json(
+          { error: "Cannot move work items to a completed release" },
+          { status: 400 }
+        );
+      }
+
+      // Get the maximum display_order for the target release
+      const maxOrderResult = db
+        .prepare(
+          "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND project_id = ?"
+        )
+        .get(releaseId, projectId) as { max_order: number | null };
+      const nextOrder = (maxOrderResult.max_order ?? -1) + 1;
+
+      fieldsToUpdate.push("release_id = ?", "display_order = ?");
+      updateValues.push(releaseId, nextOrder);
     }
 
-    if (release.status === "completed") {
+    if (hasNotes) {
+      const rawNotes = body.notes;
+      if (rawNotes !== null && rawNotes !== undefined && typeof rawNotes !== "string") {
+        return NextResponse.json(
+          { error: "Notes must be a string or null" },
+          { status: 400 }
+        );
+      }
+
+      const normalizedNotes =
+        typeof rawNotes === "string" && rawNotes.trim().length > 0
+          ? rawNotes.trim()
+          : null;
+      fieldsToUpdate.push("notes = ?");
+      updateValues.push(normalizedNotes);
+    }
+
+    if (fieldsToUpdate.length === 0) {
       return NextResponse.json(
-        { error: "Cannot move work items to a completed release" },
+        { error: "No valid fields provided to update" },
         { status: 400 }
       );
     }
 
-    // Get the maximum display_order for the target release
-    const maxOrderResult = db
-      .prepare(
-        "SELECT MAX(display_order) as max_order FROM release_work_items WHERE release_id = ? AND project_id = ?"
-      )
-      .get(releaseId, projectId) as { max_order: number | null };
-
-    const nextOrder = (maxOrderResult.max_order ?? -1) + 1;
-
-    // Update the work item with the new release_id and display_order
     const stmt = db.prepare(
-      "UPDATE release_work_items SET release_id = ?, display_order = ? WHERE id = ? AND project_id = ?"
+      `UPDATE release_work_items SET ${fieldsToUpdate.join(", ")} WHERE id = ? AND project_id = ?`
     );
-    const result = stmt.run(releaseId, nextOrder, id, projectId);
+    const result = stmt.run(...updateValues, id, projectId);
 
     if (result.changes === 0) {
       return NextResponse.json(
@@ -94,7 +131,7 @@ export async function PATCH(
   } catch (error) {
     console.error("Database error:", error);
     return NextResponse.json(
-      { error: "Failed to move work item" },
+      { error: "Failed to update work item" },
       { status: 500 }
     );
   }

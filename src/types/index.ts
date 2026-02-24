@@ -97,6 +97,7 @@ export interface ReleaseWorkItem {
   work_item_type?: string | null;
   state?: string | null;
   tags?: string | null;
+  notes?: string | null;
   task_id?: number | null;
   blockers?: Blocker[];
   display_order: number;
