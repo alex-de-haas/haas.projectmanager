@@ -3,17 +3,29 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Rocket, Settings } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  ChevronsUpDown,
+  Clock3,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Rocket,
+  Settings,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UserAvatar, getUserAvatarColor } from "@/components/UserAvatar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
@@ -133,7 +145,8 @@ export default function Sidebar() {
     () =>
       NAV_ITEMS.map((item) => ({
         ...item,
-        active: pathname === item.href,
+        active:
+          item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`),
       })),
     [pathname]
   );
@@ -148,6 +161,8 @@ export default function Sidebar() {
   };
 
   const handleProjectChange = (value: string) => {
+    if (!value || value === activeProjectId) return;
+
     setActiveProjectId(value);
     document.cookie = `pm_project_id=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
     window.location.reload();
@@ -162,160 +177,194 @@ export default function Sidebar() {
       className={cn(
         "flex h-dvh flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
         "shrink-0 transition-[width] duration-200 ease-out",
-        isCompact ? "w-16" : "w-56"
+        isCompact ? "w-[4.5rem]" : "w-64"
       )}
     >
-      <div className={cn("space-y-3", isCompact ? "px-2 py-4" : "px-3 py-4")}>
-        <div className={cn("flex items-center", isCompact ? "justify-center" : "px-1")}>
-          <div
-            className={cn(
-              "rounded-md bg-sidebar-primary text-sidebar-primary-foreground",
-              "flex items-center justify-center font-semibold",
-              isCompact ? "h-8 w-8 text-sm" : "h-8 w-8"
-            )}
-          >
-            PM
-          </div>
-          {!isCompact && (
-            <span className="ml-3 text-sm font-semibold tracking-tight">
-              Project Manager
-            </span>
+      <div className="flex h-full flex-col">
+        <div className={cn(isCompact ? "flex justify-center px-2 py-3" : "px-3 py-3")}>
+          {projects.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "h-11 w-full rounded-lg text-sidebar-foreground",
+                    isCompact
+                      ? "h-9 w-9 justify-center border-0 bg-transparent px-0 shadow-none hover:bg-sidebar-accent/60"
+                      : "justify-between border border-sidebar-border/70 bg-sidebar-accent/30 px-2 hover:bg-sidebar-accent"
+                  )}
+                  aria-label="Select project"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white"
+                      style={{ backgroundColor: getUserAvatarColor(activeProject?.name) }}
+                      title={activeProject?.name || "Project"}
+                    >
+                      {getProjectInitials(activeProject?.name)}
+                    </div>
+                    {!isCompact && (
+                      <div className="min-w-0 text-left">
+                        <p className="text-[10px] uppercase tracking-wide text-sidebar-foreground/60">Project</p>
+                        <p className="truncate text-sm font-medium leading-tight">
+                          {activeProject?.name || "Select project"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {!isCompact && <ChevronsUpDown className="h-4 w-4 text-sidebar-foreground/70" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side={isCompact ? "right" : "bottom"}
+                sideOffset={8}
+                className="w-64"
+              >
+                <DropdownMenuLabel>Projects</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {projects.map((project) => {
+                  const projectId = String(project.id);
+                  const isActive = projectId === activeProjectId;
+
+                  return (
+                    <DropdownMenuItem
+                      key={project.id}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        handleProjectChange(projectId);
+                      }}
+                      className="gap-2"
+                    >
+                      <div
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[9px] font-semibold text-white"
+                        style={{ backgroundColor: getUserAvatarColor(project.name) }}
+                      >
+                        {getProjectInitials(project.name)}
+                      </div>
+                      <span className="flex-1 truncate">{project.name}</span>
+                      <Check className={cn("h-4 w-4", isActive ? "opacity-100" : "opacity-0")} />
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
 
-        {projects.length > 0 && (
-          <Select value={activeProjectId} onValueChange={handleProjectChange}>
-            <SelectTrigger
-              className={cn(
-                "h-9 border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent",
-                isCompact
-                  ? "w-9 justify-center p-0 mx-auto border-0 shadow-none bg-transparent hover:bg-transparent [&>svg]:hidden"
-                  : "w-full justify-between px-2"
-              )}
-              aria-label="Select project"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <div
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                  style={{ backgroundColor: getUserAvatarColor(activeProject?.name) }}
-                  title={activeProject?.name || "Project"}
+        <div className="flex-1 overflow-y-auto px-2 py-3">
+          {!isCompact && (
+            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/55">
+              Platform
+            </p>
+          )}
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.href}
+                  asChild
+                  variant="ghost"
+                  className={cn(
+                    "h-9 w-full rounded-md justify-start gap-3 px-3",
+                    "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    item.active && "bg-sidebar-accent text-sidebar-accent-foreground",
+                    isCompact && "justify-center px-0"
+                  )}
                 >
-                  {getProjectInitials(activeProject?.name)}
-                </div>
-                {!isCompact && (
-                  <span className="truncate text-sm">
-                    {activeProject?.name || "Select project"}
-                  </span>
-                )}
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={String(project.id)}>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-                      style={{ backgroundColor: getUserAvatarColor(project.name) }}
-                    >
-                      {getProjectInitials(project.name)}
-                    </div>
-                    <span>{project.name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
+                  <Link href={item.href} title={isCompact ? item.label : undefined}>
+                    <Icon className="h-4 w-4" />
+                    <span className={cn("text-sm", isCompact && "sr-only")}>{item.label}</span>
+                  </Link>
+                </Button>
+              );
+            })}
+          </nav>
+        </div>
 
-      <nav className="flex-1 space-y-1 px-2">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          return (
+        <footer className={cn("border-t border-sidebar-border/70", isCompact ? "px-2 py-3" : "px-3 py-3")}>
+          {!isCompact && (
+            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/55">
+              Workspace
+            </p>
+          )}
+
+          <div className="space-y-1">
+            {isCompact ? (
+              <div className="flex justify-center pb-1">
+                <UserAvatar name={currentUser?.name} className="h-8 w-8 text-[11px]" />
+              </div>
+            ) : (
+              <div className="mx-1 mb-1 flex items-center gap-2 rounded-md border border-sidebar-border/70 bg-sidebar-accent/20 px-2 py-2">
+                <UserAvatar name={currentUser?.name} className="h-7 w-7 text-[10px]" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{currentUser?.name || "No user selected"}</p>
+                  <p className="truncate text-xs text-sidebar-foreground/65">
+                    {currentUser?.email || "Current workspace"}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <Button
-              key={item.href}
               asChild
               variant="ghost"
               className={cn(
-                "w-full justify-start gap-3 px-3",
+                "h-9 w-full justify-start gap-3 rounded-md px-3",
                 "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                item.active && "bg-sidebar-accent text-sidebar-accent-foreground",
+                pathname === "/settings" && "bg-sidebar-accent text-sidebar-accent-foreground",
                 isCompact && "justify-center px-0"
               )}
             >
-              <Link href={item.href} title={isCompact ? item.label : undefined}>
-                <Icon className="h-4 w-4" />
-                <span className={cn("text-sm", isCompact && "sr-only")}>{item.label}</span>
+              <Link href="/settings" title={isCompact ? "Settings" : undefined}>
+                <Settings className="h-4 w-4" />
+                <span className={cn("text-sm", isCompact && "sr-only")}>Settings</span>
               </Link>
             </Button>
-          );
-        })}
-      </nav>
 
-      <div className="p-2 space-y-2">
-        <div className="space-y-2 px-1">
-          {isCompact ? (
-            <div className="flex justify-center">
-              <UserAvatar name={currentUser?.name} className="h-8 w-8 text-[11px]" />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-2">
-              <UserAvatar name={currentUser?.name} className="h-7 w-7 text-[10px]" />
-              <p className="text-sm font-medium truncate">
-                {currentUser?.name || "No user selected"}
-              </p>
-            </div>
-          )}
-        </div>
-        <Button
-          asChild
-          variant="ghost"
-          className={cn(
-            "w-full justify-start gap-3 px-3",
-            "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-            pathname === "/settings" && "bg-sidebar-accent text-sidebar-accent-foreground",
-            isCompact && "justify-center px-0"
-          )}
-        >
-          <Link href="/settings" title={isCompact ? "Settings" : undefined}>
-            <Settings className="h-4 w-4" />
-            <span className={cn("text-sm", isCompact && "sr-only")}>Settings</span>
-          </Link>
-        </Button>
-        <ThemeToggle isCompact={isCompact} align="start" />
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={handleLogout}
-          className={cn(
-            "w-full justify-start gap-3 px-3",
-            "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-            isCompact && "justify-center px-0"
-          )}
-          title={isCompact ? "Log out" : undefined}
-        >
-          <LogOut className="h-4 w-4" />
-          <span className={cn("text-sm", isCompact && "sr-only")}>Log out</span>
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={toggleMode}
-          className={cn(
-            "w-full justify-start gap-3 px-3",
-            "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-            isCompact && "justify-center px-0"
-          )}
-          title={isCompact ? "Expand sidebar" : "Compact sidebar"}
-        >
-          {isCompact ? (
-            <PanelLeftOpen className="h-4 w-4" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4" />
-          )}
-          <span className={cn("text-sm", isCompact && "sr-only")}>
-            {isCompact ? "Expand" : "Compact"}
-          </span>
-        </Button>
+            <ThemeToggle
+              isCompact={isCompact}
+              align="start"
+              className="h-9 rounded-md"
+            />
+
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleLogout}
+              className={cn(
+                "h-9 w-full justify-start gap-3 rounded-md px-3",
+                "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                isCompact && "justify-center px-0"
+              )}
+              title={isCompact ? "Log out" : undefined}
+            >
+              <LogOut className="h-4 w-4" />
+              <span className={cn("text-sm", isCompact && "sr-only")}>Log out</span>
+            </Button>
+
+            <Button
+              variant="ghost"
+              onClick={toggleMode}
+              className={cn(
+                "h-9 w-full justify-start gap-3 rounded-md px-3",
+                "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                isCompact && "justify-center px-0"
+              )}
+              title={isCompact ? "Expand sidebar" : "Compact sidebar"}
+            >
+              {isCompact ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+              <span className={cn("text-sm", isCompact && "sr-only")}>
+                {isCompact ? "Expand" : "Compact"}
+              </span>
+            </Button>
+          </div>
+        </footer>
       </div>
     </aside>
   );
