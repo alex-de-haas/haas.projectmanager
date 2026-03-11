@@ -57,7 +57,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bug, GripVertical, ListTodo, MoreVertical, ShieldAlert } from "lucide-react";
+import { BookOpen, Bug, ClipboardCheck, GripVertical, MoreVertical, ShieldAlert } from "lucide-react";
 
 type ChildDiscipline = "backend" | "frontend" | "design";
 
@@ -72,6 +72,14 @@ const CHILD_TASK_OPTIONS: Array<{
 ];
 
 const ACTIVE_RELEASE_STORAGE_KEY = "projectManager.releasePlanner.activeReleaseId";
+
+const parseWorkItemTags = (rawTags?: string | null): string[] =>
+  rawTags
+    ? rawTags
+        .split(";")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
 
 interface AppUser {
   id: number;
@@ -1236,19 +1244,13 @@ export default function ReleaseTrackingPage() {
                           </th>
                           <th
                             className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted z-10 overflow-hidden"
-                            style={{ width: "40%", minWidth: "240px", maxWidth: "40vw" }}
+                            style={{ width: "55%", minWidth: "280px", maxWidth: "55vw" }}
                           >
                             Work item
                           </th>
                           <th
                             className="p-3 text-left font-normal text-muted-foreground text-sm"
-                            style={{ width: "30%", minWidth: "220px" }}
-                          >
-                            Tags
-                          </th>
-                          <th
-                            className="p-3 text-left font-normal text-muted-foreground text-sm"
-                            style={{ width: "30%", minWidth: "220px" }}
+                            style={{ width: "45%", minWidth: "240px" }}
                           >
                             Notes
                           </th>
@@ -1301,6 +1303,7 @@ export default function ReleaseTrackingPage() {
                                   bugs: 0,
                                   completedTasks: 0,
                                 };
+                          const itemTags = parseWorkItemTags(item.tags);
 
                           const getRowClass = () => {
                             if (hasBlockers) {
@@ -1377,128 +1380,135 @@ export default function ReleaseTrackingPage() {
                             >
                               <td
                                 className={getStickyBgClass()}
-                                style={{ width: "40%", minWidth: "240px", maxWidth: "40vw" }}
+                                style={{ width: "55%", minWidth: "280px", maxWidth: "55vw" }}
                               >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <div className="flex items-center justify-center flex-shrink-0 w-5 h-5">
-                                      <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                <div className="flex items-start gap-2 min-w-0">
+                                  <div className="mt-0.5 flex-shrink-0" title="User Story">
+                                    <BookOpen className="w-4 h-4 text-sky-500 dark:text-sky-400" />
+                                  </div>
+                                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                    <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5 text-foreground">
+                                      {item.external_id && (
+                                        <span className="flex-shrink-0 font-mono text-xs font-semibold tracking-[0.01em] text-muted-foreground">
+                                          #{Math.floor(Number(item.external_id))}
+                                        </span>
+                                      )}
+                                      <div className="truncate min-w-0 flex-1" title={item.title}>
+                                        {item.external_source === "azure_devops" && item.external_id ? (
+                                          <button
+                                            onClick={() => handleWorkItemClick(item)}
+                                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
+                                            title={`${item.title} - Open in Azure DevOps`}
+                                          >
+                                            {item.title}
+                                          </button>
+                                        ) : (
+                                          <span className="text-foreground">{item.title}</span>
+                                        )}
+                                      </div>
                                     </div>
-                                    {item.external_id && (
+                                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                       <Badge
                                         variant="outline"
-                                        className="text-xs font-mono font-semibold"
+                                        className={`h-5 px-2 text-[10px] font-semibold tracking-[0.02em] ${
+                                          getStatusBadgeClass(item.state)
+                                        }`}
                                       >
-                                        {Math.floor(Number(item.external_id))}
+                                        {item.state || "New"}
                                       </Badge>
-                                    )}
-                                    {hasBlockers && (
-                                      <HoverCard openDelay={100} closeDelay={100}>
-                                        <HoverCardTrigger>
+                                      {hasBlockers && (
+                                        <HoverCard openDelay={100} closeDelay={100}>
+                                          <HoverCardTrigger>
+                                            <Badge
+                                              variant="outline"
+                                              className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                                              onClick={() => void handleOpenBlockers(item)}
+                                              title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+                                            >
+                                              <ShieldAlert className="w-3 h-3" />
+                                              <span className="font-semibold">{activeBlockers.length}</span>
+                                            </Badge>
+                                          </HoverCardTrigger>
+                                          <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
+                                            <div className="space-y-2">
+                                              <h4 className="text-sm font-semibold flex items-center gap-2">
+                                                <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
+                                                Active Blockers ({activeBlockers.length})
+                                              </h4>
+                                              <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {activeBlockers.map((blocker) => (
+                                                  <div
+                                                    key={blocker.id}
+                                                    className="text-xs border rounded-md p-2 bg-background"
+                                                  >
+                                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                                      <Badge
+                                                        variant="outline"
+                                                        className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
+                                                          blocker.severity === "critical"
+                                                            ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
+                                                            : blocker.severity === "high"
+                                                            ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800"
+                                                            : blocker.severity === "medium"
+                                                            ? "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800"
+                                                            : "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
+                                                        }`}
+                                                      >
+                                                        {blocker.severity}
+                                                      </Badge>
+                                                    </div>
+                                                    <p className="text-foreground">{blocker.comment}</p>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </HoverCardContent>
+                                        </HoverCard>
+                                      )}
+                                      {item.external_source === "azure_devops" && item.external_id && (
+                                        <>
                                           <Badge
                                             variant="outline"
-                                            className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
-                                            onClick={() => void handleOpenBlockers(item)}
-                                            title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+                                            className="h-5 text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                              handleOpenChildItemsDialog(externalId, item.title, "task");
+                                            }}
                                           >
-                                            <ShieldAlert className="w-3 h-3" />
-                                            <span className="font-semibold">{activeBlockers.length}</span>
+                                              <span className="inline-flex items-center gap-1">
+                                              <ClipboardCheck className="w-3 h-3" aria-hidden="true" />
+                                              {loadingChildCounts
+                                                ? "?/?"
+                                                : `${childCounts.completedTasks}/${childCounts.tasks}`}
+                                            </span>
                                           </Badge>
-                                        </HoverCardTrigger>
-                                        <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
-                                          <div className="space-y-2">
-                                            <h4 className="text-sm font-semibold flex items-center gap-2">
-                                              <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
-                                              Active Blockers ({activeBlockers.length})
-                                            </h4>
-                                            <div className="space-y-2 max-h-60 overflow-y-auto">
-                                              {activeBlockers.map((blocker) => (
-                                                <div
-                                                  key={blocker.id}
-                                                  className="text-xs border rounded-md p-2 bg-background"
-                                                >
-                                                  <div className="flex items-start justify-between gap-2 mb-1">
-                                                    <Badge
-                                                      variant="outline"
-                                                      className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
-                                                        blocker.severity === "critical"
-                                                          ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800"
-                                                          : blocker.severity === "high"
-                                                          ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800"
-                                                          : blocker.severity === "medium"
-                                                          ? "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800"
-                                                          : "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                                      }`}
-                                                    >
-                                                      {blocker.severity}
-                                                    </Badge>
-                                                  </div>
-                                                  <p className="text-foreground">{blocker.comment}</p>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        </HoverCardContent>
-                                      </HoverCard>
-                                    )}
-                                    <Badge
-                                      variant="outline"
-                                      className={`text-xs ${
-                                        itemState === "done" || itemState === "resolved" || itemState === "closed"
-                                          ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-                                          : itemState === "active"
-                                          ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                          : "bg-muted text-muted-foreground border-border"
-                                      }`}
-                                    >
-                                      {item.state || "New"}
-                                    </Badge>
-                                    {item.external_source === "azure_devops" && item.external_id && (
-                                      <>
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs bg-blue-50 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            if (!Number.isInteger(externalId) || externalId <= 0) return;
-                                            handleOpenChildItemsDialog(externalId, item.title, "task");
-                                          }}
-                                        >
-                                          <span className="inline-flex items-center gap-1">
-                                            <ListTodo className="w-3 h-3" aria-hidden="true" />
-                                            {loadingChildCounts
-                                              ? "?/?"
-                                              : `${childCounts.completedTasks}/${childCounts.tasks}`}
-                                          </span>
-                                        </Badge>
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            if (!Number.isInteger(externalId) || externalId <= 0) return;
-                                            handleOpenChildItemsDialog(externalId, item.title, "bug");
-                                          }}
-                                        >
-                                          <span className="inline-flex items-center gap-1">
-                                            <Bug className="w-3 h-3" aria-hidden="true" />
-                                            {loadingChildCounts ? "?" : childCounts.bugs}
-                                          </span>
-                                        </Badge>
-                                      </>
-                                    )}
-                                    <div className="truncate text-sm font-medium min-w-0 flex-1" title={item.title}>
-                                      {item.external_source === "azure_devops" && item.external_id ? (
-                                        <button
-                                          onClick={() => handleWorkItemClick(item)}
-                                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
-                                          title={`${item.title} - Open in Azure DevOps`}
-                                        >
-                                          {item.title}
-                                        </button>
-                                      ) : (
-                                        <span className="text-foreground">{item.title}</span>
+                                          <Badge
+                                            variant="outline"
+                                            className="h-5 text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer hover:bg-red-100 dark:bg-red-950 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              if (!Number.isInteger(externalId) || externalId <= 0) return;
+                                              handleOpenChildItemsDialog(externalId, item.title, "bug");
+                                            }}
+                                          >
+                                            <span className="inline-flex items-center gap-1">
+                                              <Bug className="w-3 h-3" aria-hidden="true" />
+                                              {loadingChildCounts ? "?" : childCounts.bugs}
+                                            </span>
+                                          </Badge>
+                                        </>
                                       )}
+                                      {itemTags.map((tag, idx) => (
+                                        <Badge
+                                          key={`${item.id}-${idx}-${tag}`}
+                                          variant="outline"
+                                          className="h-5 max-w-[11rem] text-[11px] text-muted-foreground border-border/70 bg-background/80"
+                                          title={tag}
+                                        >
+                                          <span className="truncate">{tag}</span>
+                                        </Badge>
+                                      ))}
                                     </div>
                                   </div>
                                   <DropdownMenu>
@@ -1603,21 +1613,6 @@ export default function ReleaseTrackingPage() {
                                   </DropdownMenu>
                                 </div>
                               </td>
-                              <td className="py-1.5 px-3">
-                                {item.tags ? (
-                                  <div className="flex flex-wrap gap-1">
-                                    {item.tags.split(";").map((tag, idx) => (
-                                      tag.trim() && (
-                                        <Badge key={idx} variant="outline" className="text-xs">
-                                          {tag.trim()}
-                                        </Badge>
-                                      )
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-foreground text-sm">-</span>
-                                )}
-                              </td>
                               <td className="py-1.5 px-3 align-top">
                                 {item.notes ? (
                                   <p
@@ -1710,7 +1705,7 @@ export default function ReleaseTrackingPage() {
                                       {task.type.toLowerCase() === "bug" ? (
                                         <Bug className="w-3.5 h-3.5 text-red-600 dark:text-red-500" />
                                       ) : (
-                                        <ListTodo className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                        <ClipboardCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" />
                                       )}
                                     </div>
                                     <Badge variant="outline" className="h-4 px-1.5 text-[10px] flex-shrink-0">
@@ -2065,7 +2060,7 @@ export default function ReleaseTrackingPage() {
                                   {childItem.type.toLowerCase() === "bug" ? (
                                     <Bug className="w-4 h-4 text-red-600 dark:text-red-500" />
                                   ) : (
-                                    <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                    <ClipboardCheck className="w-4 h-4 text-amber-600 dark:text-amber-500" />
                                   )}
                                 </div>
                                 <Badge variant="outline" className="h-5 px-2 text-xs flex-shrink-0">

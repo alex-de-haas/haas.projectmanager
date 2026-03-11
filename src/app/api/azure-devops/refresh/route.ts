@@ -270,7 +270,7 @@ export async function POST(request: NextRequest) {
 
     const updateTasksStmt = db.prepare(`
       UPDATE tasks
-      SET title = ?, type = ?, status = ?, completed_at = ?
+      SET title = ?, type = ?, status = ?, tags = ?, completed_at = ?
       WHERE id = ? AND user_id = ? AND project_id = ?
     `);
 
@@ -358,6 +358,7 @@ export async function POST(request: NextRequest) {
           task.title !== title ||
           task.type !== taskType ||
           task.status !== status ||
+          task.tags !== tags ||
           taskCompletedAt !== workItemCompletedAt;
 
         if (hasTaskChanges) {
@@ -365,6 +366,7 @@ export async function POST(request: NextRequest) {
             title,
             taskType,
             status,
+            tags,
             closedDate,
             task.id,
             userId,

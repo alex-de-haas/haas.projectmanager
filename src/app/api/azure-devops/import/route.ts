@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
       const title = workItem.fields['System.Title'] as string || `Work Item ${workItem.id}`;
       const workItemType = (workItem.fields['System.WorkItemType'] as string || 'Task').toLowerCase();
       const status = workItem.fields['System.State'] as string || null;
+      const tags = workItem.fields['System.Tags'] as string || null;
       const closedDate = workItem.fields['Microsoft.VSTS.Common.ClosedDate'] as string || 
                         workItem.fields['Microsoft.VSTS.Common.ResolvedDate'] as string || 
                         workItem.fields['System.ClosedDate'] as string || 
@@ -158,11 +159,21 @@ export async function POST(request: NextRequest) {
 
       // Insert task
       const stmt = db.prepare(`
-        INSERT INTO tasks (user_id, project_id, title, type, status, external_id, external_source, display_order, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'azure_devops', ?, ?)
+        INSERT INTO tasks (user_id, project_id, title, type, status, tags, external_id, external_source, display_order, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'azure_devops', ?, ?)
       `);
 
-      const result = stmt.run(userId, projectId, title, taskType, status, workItem.id, newOrder, closedDate);
+      const result = stmt.run(
+        userId,
+        projectId,
+        title,
+        taskType,
+        status,
+        tags,
+        workItem.id,
+        newOrder,
+        closedDate
+      );
       
       const newTask = db
         .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ? AND project_id = ?')

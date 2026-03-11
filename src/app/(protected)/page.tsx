@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import {
   format,
@@ -16,7 +16,7 @@ import {
   isSunday,
   parseISO,
 } from "date-fns";
-import type { TaskWithTimeEntries, DayOff } from "@/types";
+import type { TaskWithTimeEntries, DayOff, Blocker } from "@/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,12 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -64,7 +70,7 @@ import { ImportModal, ExportToDevOpsModal } from "@/features/azure-devops";
 import { DayOffsModal } from "@/features/day-offs";
 import { BlockersModal } from "@/features/blockers";
 import { ChecklistModal } from "@/features/checklist";
-import { Bug, ListTodo, GripVertical, ListChecks, Clock3, Upload } from "lucide-react";
+import { Bug, ClipboardCheck, GripVertical, ListChecks, Clock3, Upload } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
   DndContext,
@@ -85,12 +91,262 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
+const MAX_VISIBLE_TASK_TAGS = 3;
+const CHIP_GAP_PX = 6;
+
+const parseTaskTags = (rawTags?: string | null): string[] =>
+  rawTags
+    ? rawTags
+        .split(";")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
+
+const getStatusTone = (status?: string | null) => {
+  const normalizedStatus = status?.toLowerCase();
+
+  if (normalizedStatus === "active") {
+    return {
+      textClassName: "text-blue-700 dark:text-blue-400",
+      badgeClassName:
+        "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400",
+    };
+  }
+
+  if (normalizedStatus === "resolved" || normalizedStatus === "closed") {
+    return {
+      textClassName: "text-green-700 dark:text-green-400",
+      badgeClassName:
+        "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400",
+    };
+  }
+
+  return {
+    textClassName: "text-muted-foreground",
+    badgeClassName:
+      "border-border bg-muted text-muted-foreground dark:border-border dark:bg-muted dark:text-muted-foreground",
+  };
+};
 
 interface SortableRowProps {
   id: number;
   children: React.ReactNode;
   rowClassName: string;
   dragHandleBgClassName: string;
+}
+
+interface TaskMetaRowProps {
+  status?: string | null;
+  tags?: string | null;
+  activeBlockers: Blocker[];
+  checklistSummary?: TaskWithTimeEntries["checklistSummary"];
+  onOpenBlockers: () => void;
+  onOpenChecklist: () => void;
+}
+
+const estimateChipWidth = (label: string, hasIcon = false) => {
+  const baseWidth = hasIcon ? 34 : 22;
+  return baseWidth + label.length * 8;
+};
+
+function TaskMetaRow({
+  status,
+  tags,
+  activeBlockers,
+  checklistSummary,
+  onOpenBlockers,
+  onOpenChecklist,
+}: TaskMetaRowProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const parsedTags = useMemo(() => parseTaskTags(tags), [tags]);
+  const statusTone = getStatusTone(status);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      setContainerWidth(element.clientWidth);
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const visibleTags = useMemo(() => {
+    if (parsedTags.length === 0) {
+      return { tags: [] as string[], hiddenCount: 0 };
+    }
+
+    if (containerWidth <= 0) {
+      const fallbackCount = Math.min(1, parsedTags.length);
+      return {
+        tags: parsedTags.slice(0, fallbackCount),
+        hiddenCount: parsedTags.length - fallbackCount,
+      };
+    }
+
+    const fixedChipWidths = [
+      estimateChipWidth(status || "New"),
+      ...(activeBlockers.length > 0
+        ? [estimateChipWidth(String(activeBlockers.length), true)]
+        : []),
+      ...(checklistSummary && checklistSummary.total > 0
+        ? [
+            estimateChipWidth(
+              `${checklistSummary.completed}/${checklistSummary.total}`,
+              true
+            ),
+          ]
+        : []),
+    ];
+
+    let usedWidth =
+      fixedChipWidths.reduce((sum, width) => sum + width, 0) +
+      CHIP_GAP_PX * Math.max(fixedChipWidths.length - 1, 0);
+
+    const nextVisibleTags: string[] = [];
+
+    for (let index = 0; index < parsedTags.length; index += 1) {
+      const tag = parsedTags[index];
+      const remainingCount = parsedTags.length - index - 1;
+      const tagWidth = estimateChipWidth(tag);
+      const gapBeforeTag = CHIP_GAP_PX;
+      const overflowWidth =
+        remainingCount > 0
+          ? CHIP_GAP_PX + estimateChipWidth(`+${remainingCount}`)
+          : 0;
+
+      if (usedWidth + gapBeforeTag + tagWidth + overflowWidth > containerWidth) {
+        break;
+      }
+
+      nextVisibleTags.push(tag);
+      usedWidth += gapBeforeTag + tagWidth;
+
+      if (nextVisibleTags.length >= MAX_VISIBLE_TASK_TAGS) {
+        break;
+      }
+    }
+
+    return {
+      tags: nextVisibleTags,
+      hiddenCount: Math.max(parsedTags.length - nextVisibleTags.length, 0),
+    };
+  }, [activeBlockers.length, checklistSummary, containerWidth, parsedTags, status]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex min-w-0 items-center gap-1.5 overflow-hidden"
+    >
+      <Badge
+        variant="outline"
+        className={`h-5 flex-shrink-0 px-2 text-[10px] font-semibold tracking-[0.02em] ${statusTone.badgeClassName}`}
+        title={status || "New"}
+      >
+        {status || "New"}
+      </Badge>
+      {activeBlockers.length > 0 && (
+        <HoverCard openDelay={100} closeDelay={100}>
+          <HoverCardTrigger>
+            <Badge
+              variant="outline"
+              className="h-5 flex-shrink-0 cursor-pointer gap-1 border-red-200 bg-red-50 px-2 text-[11px] text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
+              onClick={onOpenBlockers}
+              title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? "s" : ""} - Click to manage`}
+            >
+              <ShieldAlert className="h-3 w-3" />
+              <span className="font-semibold">{activeBlockers.length}</span>
+            </Badge>
+          </HoverCardTrigger>
+          <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
+            <div className="space-y-2">
+              <h4 className="flex items-center gap-2 text-sm font-semibold">
+                <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-500" />
+                Active Blockers ({activeBlockers.length})
+              </h4>
+              <div className="max-h-60 space-y-2 overflow-y-auto">
+                {activeBlockers.map((blocker) => (
+                  <div
+                    key={blocker.id}
+                    className="rounded-md border bg-background p-2 text-xs"
+                  >
+                    <div className="mb-1 flex items-start justify-between gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`h-4 flex-shrink-0 px-1.5 text-[10px] ${
+                          blocker.severity === "critical"
+                            ? "border-red-300 bg-red-100 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"
+                            : blocker.severity === "high"
+                            ? "border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400"
+                            : blocker.severity === "medium"
+                            ? "border-yellow-300 bg-yellow-100 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-400"
+                            : "border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400"
+                        }`}
+                      >
+                        {blocker.severity}
+                      </Badge>
+                    </div>
+                    <p className="text-foreground">{blocker.comment}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
+      )}
+      {checklistSummary && checklistSummary.total > 0 && (
+        <Badge
+          variant="outline"
+          className={`h-5 flex-shrink-0 cursor-pointer gap-1 px-2 text-[11px] ${
+            checklistSummary.completed === checklistSummary.total
+              ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-400"
+              : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
+          }`}
+          onClick={onOpenChecklist}
+          title={`Checklist: ${checklistSummary.completed}/${checklistSummary.total} completed`}
+        >
+          <ListChecks className="h-3 w-3" />
+          <span className="font-semibold">
+            {checklistSummary.completed}/{checklistSummary.total}
+          </span>
+        </Badge>
+      )}
+      {visibleTags.tags.map((tag) => (
+        <Badge
+          key={tag}
+          variant="outline"
+          className="h-5 max-w-[11rem] flex-shrink-0 border-border/70 bg-background/80 px-2 text-[11px] text-muted-foreground"
+          title={tag}
+        >
+          <span className="truncate">{tag}</span>
+        </Badge>
+      ))}
+      {visibleTags.hiddenCount > 0 && (
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="h-5 flex-shrink-0 border-dashed border-border/70 bg-background/60 px-2 text-[11px] text-muted-foreground"
+              >
+                +{visibleTags.hiddenCount}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs">
+              {parsedTags.slice(visibleTags.tags.length).join(", ")}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+    </div>
+  );
 }
 
 function SortableRow({ id, children, rowClassName, dragHandleBgClassName }: SortableRowProps) {
@@ -735,6 +991,18 @@ export default function Home() {
     }
   };
 
+  const handleCopyExternalId = useCallback(async (externalId: string) => {
+    const formattedExternalId = `#${parseInt(externalId, 10)}`;
+
+    try {
+      await navigator.clipboard.writeText(formattedExternalId);
+      toast.success(`Copied work item ${formattedExternalId}`);
+    } catch (err) {
+      console.error("Failed to copy work item ID:", err);
+      toast.error("Failed to copy work item ID");
+    }
+  }, []);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     
@@ -1125,282 +1393,219 @@ export default function Home() {
                       className={getStickyBgClass()}
                       style={{ minWidth: "180px", maxWidth: "28vw" }}
                     >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-col gap-1 flex-1 min-w-0">
-                        <div className="font-medium text-sm text-foreground flex items-center gap-1.5 min-w-0">
-                          <div
-                            className="flex items-center justify-center flex-shrink-0"
-                            title={task.type === "bug" ? "Bug" : "Task"}
-                          >
-                            {task.type === "bug" ? (
-                              <Bug className="w-4 h-4 text-red-600 dark:text-red-500" />
-                            ) : (
-                              <ListTodo className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                            )}
-                          </div>
-                          {hasBlockers && (
-                            <HoverCard openDelay={100} closeDelay={100}>
-                              <HoverCardTrigger>
-                                <Badge
-                                  variant="outline"
-                                  className="h-5 px-2 text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 flex items-center gap-1 flex-shrink-0 cursor-pointer"
-                                  onClick={() => setShowBlockers({ taskId: task.id, taskTitle: task.title })}
-                                  title={`${activeBlockers.length} active blocker${activeBlockers.length > 1 ? 's' : ''} - Click to manage`}
-                                >
-                                  <ShieldAlert className="w-3 h-3" />
-                                  <span className="font-semibold">{activeBlockers.length}</span>
-                                </Badge>
-                              </HoverCardTrigger>
-                              <HoverCardContent className="w-80" align="start" side="top" sideOffset={5}>
-                                <div className="space-y-2">
-                                  <h4 className="text-sm font-semibold flex items-center gap-2">
-                                    <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-500" />
-                                    Active Blockers ({activeBlockers.length})
-                                  </h4>
-                                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {activeBlockers.map((blocker) => (
-                                      <div
-                                        key={blocker.id}
-                                        className="text-xs border rounded-md p-2 bg-background"
+                    {(() => {
+                      return (
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex min-w-0 flex-1 gap-2">
+                            <span
+                              className="mt-0.5 flex-shrink-0"
+                              title={task.type === "bug" ? "Bug" : "Task"}
+                            >
+                              {task.type === "bug" ? (
+                                <Bug className="h-4 w-4 text-red-600 dark:text-red-500" />
+                              ) : (
+                                <ClipboardCheck className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                              )}
+                            </span>
+                            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5 text-foreground">
+                                    {task.external_source === "azure_devops" && task.external_id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyExternalId(task.external_id!)}
+                                        className="flex-shrink-0 font-mono text-xs font-semibold tracking-[0.01em] text-muted-foreground transition-colors hover:text-foreground"
+                                        title={`Azure DevOps Work Item ${parseInt(task.external_id, 10)}`}
                                       >
-                                        <div className="flex items-start justify-between gap-2 mb-1">
-                                          <Badge
-                                            variant="outline"
-                                            className={`h-4 px-1.5 text-[10px] flex-shrink-0 ${
-                                              blocker.severity === 'critical'
-                                                ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-950 dark:text-red-400 dark:border-red-800'
-                                                : blocker.severity === 'high'
-                                                ? 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800'
-                                                : blocker.severity === 'medium'
-                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-400 dark:border-yellow-800'
-                                                : 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800'
-                                            }`}
-                                          >
-                                            {blocker.severity}
-                                          </Badge>
-                                        </div>
-                                        <p className="text-foreground">
-                                          {blocker.comment}
-                                        </p>
-                                      </div>
-                                    ))}
+                                        #{parseInt(task.external_id, 10)}
+                                      </button>
+                                    )}
+                                    <div className="min-w-0 truncate" title={task.title}>
+                                      {task.external_source === "azure_devops" && task.external_id ? (
+                                        <button
+                                          onClick={() => handleTaskClick(task)}
+                                          className="block w-full truncate text-left text-blue-600 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                                          title={`${task.title} - Open in Azure DevOps`}
+                                        >
+                                          {task.title}
+                                        </button>
+                                      ) : (
+                                        task.title
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </HoverCardContent>
-                            </HoverCard>
-                          )}
-                          {task.checklistSummary && task.checklistSummary.total > 0 && (
-                            <Badge
-                              variant="outline"
-                              className={`h-5 px-2 text-xs flex items-center gap-1 flex-shrink-0 cursor-pointer ${
-                                task.checklistSummary.completed === task.checklistSummary.total
-                                  ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-                                  : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:border-slate-800"
-                              }`}
-                              onClick={() => setShowChecklist({ taskId: task.id, taskTitle: task.title })}
-                              title={`Checklist: ${task.checklistSummary.completed}/${task.checklistSummary.total} completed`}
-                            >
-                              <ListChecks className="w-3 h-3" />
-                              <span className="font-semibold">
-                                {task.checklistSummary.completed}/{task.checklistSummary.total}
-                              </span>
-                            </Badge>
-                          )}
-                          {task.external_source === "azure_devops" &&
-                            task.external_id && (
-                              <Badge
-                                variant="outline"
-                                className="border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800 text-xs h-5 flex-shrink-0"
-                                title={`Azure DevOps Work Item ${parseInt(
-                                  task.external_id
-                                )}`}
-                              >
-                                {parseInt(task.external_id)}
-                              </Badge>
-                            )}
-                          <Badge
-                            variant="outline"
-                            className={`h-5 px-2 text-xs flex-shrink-0 ${
-                              task.status?.toLowerCase() === "active"
-                                ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800"
-                                : task.status?.toLowerCase() === "resolved" ||
-                                  task.status?.toLowerCase() === "closed"
-                                ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800"
-                                : task.status?.toLowerCase() === "new"
-                                ? "bg-muted text-muted-foreground border-border"
-                                : "bg-muted text-muted-foreground border-border"
-                            }`}
-                          >
-                            {task.status || "New"}
-                          </Badge>
-                          <div className="truncate min-w-0" title={task.title}>
-                            {task.external_source === "azure_devops" &&
-                            task.external_id ? (
-                              <button
-                                onClick={() => handleTaskClick(task)}
-                                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer text-left truncate block w-full"
-                                title={`${task.title} - Open in Azure DevOps`}
-                              >
-                                {task.title}
-                              </button>
-                            ) : (
-                              task.title
-                            )}
+                              </div>
+
+                              <TaskMetaRow
+                                status={task.status}
+                                tags={task.tags}
+                                activeBlockers={activeBlockers}
+                                checklistSummary={task.checklistSummary}
+                                onOpenBlockers={() =>
+                                  setShowBlockers({ taskId: task.id, taskTitle: task.title })
+                                }
+                                onOpenChecklist={() =>
+                                  setShowChecklist({ taskId: task.id, taskTitle: task.title })
+                                }
+                              />
+                            </div>
                           </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-60 hover:opacity-100"
+                                title="Actions"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <span>Change Status</span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleStatusChange(
+                                        task.id,
+                                        "New",
+                                        task.external_source === "azure_devops"
+                                      )
+                                    }
+                                  >
+                                    New
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleStatusChange(
+                                        task.id,
+                                        "Active",
+                                        task.external_source === "azure_devops"
+                                      )
+                                    }
+                                  >
+                                    Active
+                                  </DropdownMenuItem>
+                                  {task.type !== "task" && (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleStatusChange(
+                                          task.id,
+                                          "Resolved",
+                                          task.external_source === "azure_devops"
+                                        )
+                                      }
+                                    >
+                                      Resolved
+                                    </DropdownMenuItem>
+                                  )}
+                                  {task.type !== "bug" && (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleStatusChange(
+                                          task.id,
+                                          "Closed",
+                                          task.external_source === "azure_devops"
+                                        )
+                                      }
+                                    >
+                                      Closed
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                              {task.external_source !== "azure_devops" && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setEditingTask({
+                                      id: task.id,
+                                      title: task.title,
+                                      type: task.type,
+                                    })
+                                  }
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <Pencil className="h-4 w-4" />
+                                    <span>Edit Task</span>
+                                  </span>
+                                </DropdownMenuItem>
+                              )}
+                              {task.external_source !== "azure_devops" && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setExportToDevOps({
+                                      id: task.id,
+                                      title: task.title,
+                                      type: task.type,
+                                    })
+                                  }
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <Upload className="h-4 w-4" />
+                                    <span>Export to DevOps</span>
+                                  </span>
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setShowTimeEntries({ taskId: task.id, taskTitle: task.title })
+                                }
+                              >
+                                <span className="flex items-center gap-2">
+                                  <Clock3 className="h-4 w-4" />
+                                  <span>View Tracked Time</span>
+                                </span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setShowBlockers({ taskId: task.id, taskTitle: task.title })
+                                }
+                              >
+                                <span className="flex items-center gap-2">
+                                  <ShieldAlert className="h-4 w-4" />
+                                  <span>Manage Blockers</span>
+                                  {hasBlockers && (
+                                    <Badge variant="outline" className="ml-auto h-5 px-1.5 text-xs">
+                                      {activeBlockers.length}
+                                    </Badge>
+                                  )}
+                                </span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setShowChecklist({ taskId: task.id, taskTitle: task.title })
+                                }
+                              >
+                                <span className="flex items-center gap-2">
+                                  <ListChecks className="h-4 w-4" />
+                                  <span>Checklist</span>
+                                  {task.checklistSummary && task.checklistSummary.total > 0 && (
+                                    <Badge variant="outline" className="ml-auto h-5 px-1.5 text-xs">
+                                      {task.checklistSummary.completed}/{task.checklistSummary.total}
+                                    </Badge>
+                                  )}
+                                </span>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteTask(task.id, task.title)}
+                                className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <Trash2 className="h-4 w-4" />
+                                  <span>Delete Task</span>
+                                </span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
-                            title="Actions"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>
-                              <span>Change Status</span>
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  handleStatusChange(
-                                    task.id,
-                                    "New",
-                                    task.external_source === "azure_devops"
-                                  )
-                                }
-                              >
-                                New
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  handleStatusChange(
-                                    task.id,
-                                    "Active",
-                                    task.external_source === "azure_devops"
-                                  )
-                                }
-                              >
-                                Active
-                              </DropdownMenuItem>
-                              {task.type !== "task" && (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    handleStatusChange(
-                                      task.id,
-                                      "Resolved",
-                                      task.external_source === "azure_devops"
-                                    )
-                                  }
-                                >
-                                  Resolved
-                                </DropdownMenuItem>
-                              )}
-                              {task.type !== "bug" && (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    handleStatusChange(
-                                      task.id,
-                                      "Closed",
-                                      task.external_source === "azure_devops"
-                                    )
-                                  }
-                                >
-                                  Closed
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                          {task.external_source !== "azure_devops" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setEditingTask({
-                                  id: task.id,
-                                  title: task.title,
-                                  type: task.type,
-                                })
-                              }
-                            >
-                              <span className="flex items-center gap-2">
-                                <Pencil className="h-4 w-4" />
-                                <span>Edit Task</span>
-                              </span>
-                            </DropdownMenuItem>
-                          )}
-                          {task.external_source !== "azure_devops" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setExportToDevOps({
-                                  id: task.id,
-                                  title: task.title,
-                                  type: task.type,
-                                })
-                              }
-                            >
-                              <span className="flex items-center gap-2">
-                                <Upload className="h-4 w-4" />
-                                <span>Export to DevOps</span>
-                              </span>
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setShowTimeEntries({ taskId: task.id, taskTitle: task.title })
-                            }
-                          >
-                            <span className="flex items-center gap-2">
-                              <Clock3 className="h-4 w-4" />
-                              <span>View Tracked Time</span>
-                            </span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setShowBlockers({ taskId: task.id, taskTitle: task.title })
-                            }
-                          >
-                            <span className="flex items-center gap-2">
-                              <ShieldAlert className="h-4 w-4" />
-                              <span>Manage Blockers</span>
-                              {hasBlockers && (
-                                <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
-                                  {activeBlockers.length}
-                                </Badge>
-                              )}
-                            </span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setShowChecklist({ taskId: task.id, taskTitle: task.title })
-                            }
-                          >
-                            <span className="flex items-center gap-2">
-                              <ListChecks className="h-4 w-4" />
-                              <span>Checklist</span>
-                              {task.checklistSummary && task.checklistSummary.total > 0 && (
-                                <Badge variant="outline" className="h-5 px-1.5 text-xs ml-auto">
-                                  {task.checklistSummary.completed}/{task.checklistSummary.total}
-                                </Badge>
-                              )}
-                            </span>
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteTask(task.id, task.title)}
-                            className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                          >
-                            <span className="flex items-center gap-2">
-                              <Trash2 className="h-4 w-4" />
-                              <span>Delete Task</span>
-                            </span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                      );
+                    })()}
                   </td>
                   {calendarDays.map((day) => {
                     const hours = task.timeEntries[day.key] || 0;

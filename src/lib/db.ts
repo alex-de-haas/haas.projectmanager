@@ -132,6 +132,7 @@ const initDb = () => {
       title TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'task',
       status TEXT,
+      tags TEXT,
       external_id TEXT,
       external_source TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -751,6 +752,20 @@ const initDb = () => {
       console.log('Adding completed_at column to tasks table...');
       db.exec('ALTER TABLE tasks ADD COLUMN completed_at DATETIME');
       console.log('Completed_at column added successfully');
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+  }
+
+  // Migration: Add tags column to tasks table if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const hasTagsColumn = tableInfo.some(col => col.name === 'tags');
+
+    if (!hasTagsColumn) {
+      console.log('Adding tags column to tasks table...');
+      db.exec('ALTER TABLE tasks ADD COLUMN tags TEXT');
+      console.log('Tags column added successfully');
     }
   } catch (error) {
     console.error('Migration error:', error);
