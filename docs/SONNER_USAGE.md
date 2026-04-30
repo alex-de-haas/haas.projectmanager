@@ -1,144 +1,37 @@
-# Using Sonner Toast Notifications
+# Notifications Feature
 
-Sonner is now integrated into your application. Here's how to use it:
+## Overview
 
-## Basic Usage
+Project Manager uses toast notifications to provide immediate feedback after user actions. Notifications keep users informed without interrupting the current workflow.
 
-Import the toast function in any client component:
+## Notification Types
 
-```tsx
-"use client"
+- **Success**: confirms that an action completed, such as saving settings or importing work items.
+- **Error**: explains that an action failed and may include the reason.
+- **Warning**: highlights a risky or blocked action, such as trying to close a task before checklist items are complete.
+- **Info**: communicates neutral state changes or available updates.
+- **Loading**: shows that a longer-running action is in progress.
 
-import { toast } from "sonner"
+## Where Notifications Appear
 
-export default function MyComponent() {
-  return (
-    <button onClick={() => toast("Hello World")}>
-      Show Toast
-    </button>
-  )
-}
-```
+Notifications are used across workflows where immediate feedback matters:
 
-## Toast Variants
+- Task creation and updates.
+- Checklist generation and checklist changes.
+- Blocker creation, resolution, and deletion.
+- Azure DevOps connection tests, imports, refreshes, exports, and status sync.
+- Settings changes.
+- User and project management.
+- Database backup and restore operations.
 
-### Success
-```tsx
-toast.success("Task completed successfully")
-```
+## Behavior Guidelines
 
-### Error
-```tsx
-toast.error("Failed to save task")
-```
+- Notifications should be short and action-oriented.
+- Success messages should confirm the completed action.
+- Error messages should help the user understand what to fix next.
+- Loading messages should be used for actions that may take noticeable time.
+- Notifications should not replace validation messages when the user needs to correct a specific field.
 
-### Warning
-```tsx
-toast.warning("This action cannot be undone")
-```
+## User Experience
 
-### Info
-```tsx
-toast.info("New updates available")
-```
-
-### Loading
-```tsx
-toast.loading("Importing work items...")
-```
-
-## Advanced Usage
-
-### With Description
-```tsx
-toast.success("Task created", {
-  description: "Your task has been added to the list",
-})
-```
-
-### With Action Button
-```tsx
-toast("Event scheduled", {
-  action: {
-    label: "Undo",
-    onClick: () => console.log("Undo"),
-  },
-})
-```
-
-### Promise-based
-```tsx
-toast.promise(fetchData(), {
-  loading: "Loading...",
-  success: "Data loaded successfully",
-  error: "Failed to load data",
-})
-```
-
-### Custom Duration
-```tsx
-toast.success("Saved", { duration: 5000 })
-```
-
-### Dismissible
-```tsx
-toast("This can be closed", {
-  dismissible: true,
-  closeButton: true,
-})
-```
-
-## Example Integration in Your App
-
-For API calls in your features:
-
-```tsx
-// In your Azure DevOps import modal
-const handleImport = async () => {
-  const promise = fetch('/api/azure-devops/import', {
-    method: 'POST',
-    body: JSON.stringify(selectedItems)
-  })
-
-  toast.promise(promise, {
-    loading: 'Importing work items...',
-    success: 'Work items imported successfully',
-    error: 'Failed to import work items',
-  })
-}
-
-// In your task management
-const handleTaskCreate = async (task: Task) => {
-  try {
-    await createTask(task)
-    toast.success("Task created", {
-      description: `"${task.title}" has been added`,
-    })
-  } catch (error) {
-    toast.error("Failed to create task", {
-      description: error.message,
-    })
-  }
-}
-```
-
-## Positioning
-
-You can change the position globally in the layout:
-
-```tsx
-<Toaster position="top-right" />
-```
-
-Available positions: `top-left`, `top-center`, `top-right`, `bottom-left`, `bottom-center`, `bottom-right`
-
-## Rich Content
-
-```tsx
-toast(
-  <div className="flex items-center gap-2">
-    <CheckIcon className="h-4 w-4" />
-    <span>Custom content</span>
-  </div>
-)
-```
+Notifications are intended to support focused work. They should confirm important outcomes, surface failures quickly, and avoid requiring users to leave the page they are working on.

@@ -1,197 +1,72 @@
 # Azure DevOps Integration
 
-This document describes the Azure DevOps integration feature for importing tasks and bugs.
+## Overview
 
-## Features
+The Azure DevOps integration connects Project Manager with Azure DevOps work items. It is optional: teams can use Project Manager entirely with local tasks, or connect a project to Azure DevOps when they want planning and execution data to stay aligned.
 
-### 1. Azure DevOps Settings
-- Configure your Azure DevOps organization, project, and Personal Access Token (PAT)
-- Test connection before saving
-- Secure storage of credentials in the database
+## Capabilities
 
-### 2. Import Work Items
-- Import work items assigned to you
-- Import specific work items by ID
-- Automatic task/bug type mapping
-- Duplicate detection (prevents re-importing)
-- Visual badge for imported items
+- Configure Azure DevOps organization, project, and Personal Access Token.
+- Test the Azure DevOps connection before saving settings.
+- Import work items assigned to the current user.
+- Import specific work items by ID.
+- Avoid duplicate imports for work items that are already linked.
+- Show which tasks are linked to Azure DevOps.
+- Refresh imported items to pick up title, type, and status changes.
+- Update linked work item status from Project Manager when permissions allow it.
+- Export local tasks to Azure DevOps.
+- Link exported tasks to an optional parent work item.
+- Import release work items for release planning.
+- Track child work item counts and child status in release planning.
+- Create discipline-specific child tasks for backend, frontend, and design work.
+- Create a local blocker task from a release work item.
 
-### 3. Refresh/Update Imported Tasks
-- Click the **🔄 Refresh** button to update all previously imported tasks
-- Automatically syncs title, type, and status changes from Azure DevOps
-- Shows how many tasks were updated
-- Only updates tasks that have changed
+## Setup
 
-### 4. Change Task Status
-- Use the status dropdown for each task to change its status
-- Available statuses: New, Active, Resolved, Closed
-- For tasks linked to Azure DevOps (with 🔄 Synced badge):
-  - Status changes are automatically synced with Azure DevOps
-  - Updates both local database and remote work item
-  - Shows confirmation when sync is successful
-- For local tasks (without Azure DevOps link):
-  - Status changes are saved only locally
-  - No remote synchronization occurs
+1. Create a Personal Access Token in Azure DevOps.
+2. Give the token access to work items.
+3. Open Settings in Project Manager.
+4. Enter the Azure DevOps organization, project, and token.
+5. Test the connection.
+6. Save the settings after the test succeeds.
 
-## Setup Instructions
+For status updates and exported tasks, the token needs work item write access. Read-only tokens can still support read-focused workflows such as import and refresh.
 
-### Step 1: Create a Personal Access Token (PAT)
+## Importing Work Items
 
-1. Go to your Azure DevOps organization
-2. Click on your profile icon (top right) → **User settings** → **Personal access tokens**
-3. Click **+ New Token**
-4. Configure the token:
-   - **Name**: Time Tracker Integration
-   - **Organization**: Select your organization
-   - **Expiration**: Choose your preferred expiration date
-   - **Scopes**: Select **Work Items (Read)**
-5. Click **Create**
-6. **Important**: Copy the token immediately - you won't be able to see it again!
+Users can import all assigned work items or provide a specific list of work item IDs. Imported work items become tasks or bugs in Project Manager and keep a link to their Azure DevOps source.
 
-### Step 2: Configure Settings in the App
+Imported items can be used in time tracking, task lists, blockers, checklists, and release planning.
 
-1. Open the Time Tracker application
-2. Click the **⚙️ Settings** button
-3. Fill in the following information:
-   - **Organization**: Your Azure DevOps organization name (from `https://dev.azure.com/[organization]`)
-   - **Project**: Your project name
-   - **Personal Access Token**: Paste the PAT you created
-4. Click **Test Connection** to verify the settings
-5. If successful, click **Save Settings**
+## Refreshing Work Items
 
-### Step 3: Import Work Items
+Refresh updates previously imported work items with the latest Azure DevOps data. This is useful when titles, types, or statuses change outside Project Manager.
 
-1. Click the **Import from Azure DevOps** button
-2. Choose an import mode:
-   - **Import all work items assigned to me**: Imports all non-closed work items assigned to you
-   - **Import specific work item IDs**: Enter comma-separated IDs (e.g., `123, 456, 789`)
-3. Click **Import**
-4. The app will display how many items were imported and how many were skipped
+## Status Sync
 
-## Technical Details
+When a task is linked to Azure DevOps, status changes can sync back to the Azure DevOps work item. If the token does not have write permissions or the target status is not valid for the work item process, the local task can still be updated while the remote update fails.
 
-### Database Schema Updates
+## Release Planning
 
-New columns added to the `tasks` table:
-- `external_id`: Stores the unique identifier from Azure DevOps (e.g., "ado-12345")
-- `external_source`: Identifies the source system (currently "azure_devops")
-- `status`: Stores the work item status from Azure DevOps (e.g., "New", "Active", "Resolved", "Closed")
-
-New `settings` table:
-- Stores configuration key-value pairs
-- Azure DevOps settings stored as JSON
-
-### API Endpoints
-
-#### `/api/settings`
-- `GET`: Retrieve settings (query param: `key`)
-- `POST`: Create or update settings
-- `DELETE`: Delete settings (query param: `key`)
-
-#### `/api/azure-devops/test`
-- `POST`: Test Azure DevOps connection with provided credentials
-
-#### `/api/azure-devops/import`
-- `POST`: Import work items from Azure DevOps
-- Body options:
-  - `{ "assignedToMe": true }` - Import items assigned to the authenticated user
-  - `{ "workItemIds": [123, 456, 789] }` - Import specific work item IDs
-  - `{ "query": "SELECT [System.Id] FROM WorkItems WHERE..." }` - Custom WIQL query
-
-#### `/api/azure-devops/refresh`
-- `POST`: Update all previously imported work items with latest data from Azure DevOps
-- Automatically finds all tasks with `external_source = "azure_devops"`
-- Updates title, type, and status for tasks that have changed
-- Returns count of updated and skipped tasks
-
-#### `/api/azure-devops/update-status`
-- `POST`: Update task status and sync with Azure DevOps
-- Body: `{ "taskId": number, "status": string }`
-- Updates local database status
-- If task is linked to Azure DevOps, also updates the remote work item
-- Returns sync status and any error messages
-- Falls back to local-only update if Azure DevOps sync fails
-
-#### `/api/tasks` (PATCH)
-- `PATCH`: Update task status locally (no Azure DevOps sync)
-- Body: `{ "id": number, "status": string }`
-- Updates only the local database
-- Used for tasks not linked to Azure DevOps
-
-### Work Item Type Mapping
-
-Azure DevOps work item types are mapped to the app's task types:
-- **Bug** → `bug`
-- All others (Task, User Story, Feature, etc.) → `task`
-
-### Status Import
-
-The work item status is automatically imported from Azure DevOps and stored in the `status` field. Common status values include:
-- **New**: Work item has been created but not yet started
-- **Active**: Work is in progress
-- **Resolved**: Work is complete and awaiting verification
-- **Closed**: Work item is finished and verified
-- Custom statuses defined in your Azure DevOps process template
-
-### Duplicate Prevention
-
-The app checks the `external_id` field before importing. If a work item with the same external ID already exists, it will be skipped.
-
-## Security Considerations
-
-1. **PAT Storage**: Personal Access Tokens are stored in the database. Consider encrypting the database in production.
-2. **Minimum Permissions**: The PAT only needs **Work Items (Read)** scope.
-3. **Token Expiration**: Remember to update the PAT when it expires.
+Release planning can import Azure DevOps user stories and related work items into a release. Teams can reorder releases, move work items between releases, review child work item progress, and create supporting child tasks for different disciplines.
 
 ## Troubleshooting
 
-### "Connection failed" error
-- Verify organization and project names are correct
-- Ensure the PAT has not expired
-- Check that the PAT has **Work Items (Read)** permission
-- Verify network connectivity to Azure DevOps
+### Connection Fails
 
-### "No work items found"
-- When using "assigned to me": Ensure you have open work items assigned in Azure DevOps
-- When using specific IDs: Verify the work item IDs exist and are accessible
+- Check that the organization and project names match Azure DevOps.
+- Confirm that the token has not expired.
+- Confirm that the token has work item permissions.
+- Verify that the user can access the target project in Azure DevOps.
 
-### Items not importing
-- Check if the items were already imported (look for the "ADO" badge)
-- Verify the work items exist in the specified project
-- Ensure the PAT has access to those work items
+### No Work Items Are Found
 
-## Status Change Requirements
+- Confirm that relevant work items are assigned to the expected user.
+- Check that manually entered work item IDs are correct.
+- Verify that the token can read those work items.
 
-### Azure DevOps Permissions
+### Status Updates Fail
 
-To change work item status, your Personal Access Token (PAT) needs:
-- **Work Items (Read & Write)** permission
-
-If your PAT only has Read permission, status changes will:
-- Update successfully in the local database
-- Show an error message for Azure DevOps sync
-- Not affect the remote work item
-
-To update your PAT permissions:
-1. Go to Azure DevOps → User settings → Personal access tokens
-2. Edit your existing token or create a new one
-3. Enable **Work Items (Read & Write)** scope
-4. Update the PAT in the app settings
-
-### Custom Work Item States
-
-The app provides four common statuses (New, Active, Resolved, Closed), but Azure DevOps work items may use custom process templates with different state names. If you try to set a status that doesn't exist in Azure DevOps:
-- The local database will update successfully
-- Azure DevOps sync will fail with an error
-- An error message will be displayed
-
-**Solution**: Modify the status dropdown in the code to match your Azure DevOps process template states.
-
-## Future Enhancements
-
-Potential improvements for the integration:
-- Dynamic status loading from Azure DevOps process template
-- Auto-sync on a schedule
-- Import work item descriptions and additional fields
-- Support for other Azure DevOps item types
-- OAuth authentication instead of PAT
+- Confirm that the token has work item write permissions.
+- Check whether the selected status exists in the Azure DevOps process used by the project.
+- Review whether the work item is in a state that allows the requested transition.
