@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { format } from "date-fns";
 import type { Release, ReleaseWorkItem } from "@/types";
 import { toast } from "sonner";
@@ -14,8 +15,6 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import ReleaseImportModal from "@/features/release-planner/components/ReleaseImportModal";
-import { BlockersModal } from "@/features/blockers";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +57,15 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { BookOpen, Bug, ClipboardCheck, GripVertical, MoreVertical, ShieldAlert } from "lucide-react";
+
+const ReleaseImportModal = dynamic(
+  () => import("@/features/release-planner/components/ReleaseImportModal"),
+  { ssr: false }
+);
+const BlockersModal = dynamic(
+  () => import("@/features/blockers/components/BlockersModal"),
+  { ssr: false }
+);
 
 type ChildDiscipline = "backend" | "frontend" | "design";
 

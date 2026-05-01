@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +24,6 @@ interface ImportModalProps {
 
 export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
   const [workItems, setWorkItems] = useState<AzureDevOpsWorkItem[]>([]);
-  const [filteredWorkItems, setFilteredWorkItems] = useState<AzureDevOpsWorkItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -34,25 +33,7 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
     "info"
   );
 
-  useEffect(() => {
-    fetchWorkItems();
-  }, []);
-
-  useEffect(() => {
-    if (filterText.trim() === "") {
-      setFilteredWorkItems(workItems);
-    } else {
-      const searchText = filterText.toLowerCase();
-      const filtered = workItems.filter(
-        (item) =>
-          item.id.toString().includes(searchText) ||
-          item.title.toLowerCase().includes(searchText)
-      );
-      setFilteredWorkItems(filtered);
-    }
-  }, [filterText, workItems]);
-
-  const fetchWorkItems = async () => {
+  const fetchWorkItems = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/azure-devops/work-items");
@@ -60,7 +41,6 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
 
       if (response.ok) {
         setWorkItems(data.workItems || []);
-        setFilteredWorkItems(data.workItems || []);
       } else {
         setMessage(`✗ Failed to fetch work items: ${data.error || "Unknown error"}`);
         setMessageType("error");
@@ -71,24 +51,55 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchWorkItems();
+  }, [fetchWorkItems]);
+
+  const filteredWorkItems = useMemo(() => {
+    const searchText = filterText.trim().toLowerCase();
+    if (!searchText) return workItems;
+
+    return workItems.filter(
+      (item) =>
+        item.id.toString().includes(searchText) ||
+        item.title.toLowerCase().includes(searchText)
+    );
+  }, [filterText, workItems]);
+
+  const filteredWorkItemIds = useMemo(
+    () => filteredWorkItems.map((item) => item.id),
+    [filteredWorkItems]
+  );
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredWorkItems.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredWorkItems.map((item) => item.id)));
-    }
+    setSelectedIds((current) => {
+      const allVisibleSelected = filteredWorkItemIds.every((id) =>
+        current.has(id)
+      );
+      const next = new Set(current);
+
+      if (allVisibleSelected) {
+        filteredWorkItemIds.forEach((id) => next.delete(id));
+      } else {
+        filteredWorkItemIds.forEach((id) => next.add(id));
+      }
+
+      return next;
+    });
   };
 
   const toggleSelect = (id: number) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   const handleImport = async () => {
@@ -133,8 +144,14 @@ export function ImportModal({ onClose, onSuccess }: ImportModalProps) {
     }
   };
 
-  const allSelected = filteredWorkItems.length > 0 && selectedIds.size === filteredWorkItems.length;
-  const someSelected = selectedIds.size > 0 && selectedIds.size < filteredWorkItems.length;
+  const selectedVisibleCount = filteredWorkItemIds.filter((id) =>
+    selectedIds.has(id)
+  ).length;
+  const allSelected =
+    filteredWorkItemIds.length > 0 &&
+    selectedVisibleCount === filteredWorkItemIds.length;
+  const someSelected =
+    selectedVisibleCount > 0 && selectedVisibleCount < filteredWorkItemIds.length;
 
   return (
     <Dialog open={true} onOpenChange={onClose}>

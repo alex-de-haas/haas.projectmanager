@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,7 +35,6 @@ interface ExportToDevOpsModalProps {
 
 export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOpsModalProps) {
   const [parentWorkItems, setParentWorkItems] = useState<ParentWorkItem[]>([]);
-  const [filteredWorkItems, setFilteredWorkItems] = useState<ParentWorkItem[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -43,26 +42,7 @@ export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOps
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
 
-  useEffect(() => {
-    fetchParentWorkItems();
-  }, []);
-
-  useEffect(() => {
-    if (filterText.trim() === "") {
-      setFilteredWorkItems(parentWorkItems);
-    } else {
-      const searchText = filterText.toLowerCase();
-      const filtered = parentWorkItems.filter(
-        (item) =>
-          item.id.toString().includes(searchText) ||
-          item.title.toLowerCase().includes(searchText) ||
-          item.type.toLowerCase().includes(searchText)
-      );
-      setFilteredWorkItems(filtered);
-    }
-  }, [filterText, parentWorkItems]);
-
-  const fetchParentWorkItems = async () => {
+  const fetchParentWorkItems = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch("/api/azure-devops/export");
@@ -70,7 +50,6 @@ export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOps
 
       if (response.ok) {
         setParentWorkItems(data.parentWorkItems || []);
-        setFilteredWorkItems(data.parentWorkItems || []);
       } else {
         setMessage(`✗ Failed to fetch parent work items: ${data.error || "Unknown error"}`);
         setMessageType("error");
@@ -81,7 +60,23 @@ export function ExportToDevOpsModal({ task, onClose, onSuccess }: ExportToDevOps
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchParentWorkItems();
+  }, [fetchParentWorkItems]);
+
+  const filteredWorkItems = useMemo(() => {
+    const searchText = filterText.trim().toLowerCase();
+    if (!searchText) return parentWorkItems;
+
+    return parentWorkItems.filter(
+      (item) =>
+        item.id.toString().includes(searchText) ||
+        item.title.toLowerCase().includes(searchText) ||
+        item.type.toLowerCase().includes(searchText)
+    );
+  }, [filterText, parentWorkItems]);
 
   const handleExport = async () => {
     setExporting(true);

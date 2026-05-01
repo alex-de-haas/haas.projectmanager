@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   addMonths,
   eachDayOfInterval,
@@ -21,8 +22,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DayOffsModal } from "@/features/day-offs";
 import type { DayOff } from "@/types";
+
+const DayOffsModal = dynamic(
+  () =>
+    import("@/features/day-offs/components/DayOffsModal").then(
+      (mod) => mod.DayOffsModal
+    ),
+  { ssr: false }
+);
 
 type DayOffWithUser = DayOff & {
   user_name?: string;

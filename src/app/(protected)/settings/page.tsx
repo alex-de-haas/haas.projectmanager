@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { GeneralSettingsForm } from "@/features/settings";
+import { GeneralSettingsForm } from "@/features/settings/components/GeneralSettingsForm";
 
 export default function SettingsPage() {
   return (

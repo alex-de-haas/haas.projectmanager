@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { KeyboardEvent } from "react";
+import dynamic from "next/dynamic";
 import {
   format,
   startOfMonth,
@@ -66,10 +67,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { WorkItemModal } from "@/features/tasks";
-import { ImportModal, ExportToDevOpsModal } from "@/features/azure-devops";
-import { BlockersModal } from "@/features/blockers";
-import { ChecklistModal } from "@/features/checklist";
 import { Bug, ClipboardCheck, GripVertical, ListChecks, Clock3, Upload } from "lucide-react";
 import { ShieldAlert, Trash2, MoreVertical, TreePalm, Pencil, Filter } from "lucide-react";
 import {
@@ -89,6 +86,36 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
+const WorkItemModal = dynamic(
+  () =>
+    import("@/features/tasks/components/WorkItemModal").then(
+      (mod) => mod.WorkItemModal
+    ),
+  { ssr: false }
+);
+const ImportModal = dynamic(
+  () =>
+    import("@/features/azure-devops/components/ImportModal").then(
+      (mod) => mod.ImportModal
+    ),
+  { ssr: false }
+);
+const ExportToDevOpsModal = dynamic(
+  () =>
+    import("@/features/azure-devops/components/ExportToDevOpsModal").then(
+      (mod) => mod.ExportToDevOpsModal
+    ),
+  { ssr: false }
+);
+const BlockersModal = dynamic(
+  () => import("@/features/blockers/components/BlockersModal"),
+  { ssr: false }
+);
+const ChecklistModal = dynamic(
+  () => import("@/features/checklist/components/ChecklistModal"),
+  { ssr: false }
+);
 
 const WEEK_STARTS_ON_MONDAY = { weekStartsOn: 1 as const };
 const MAX_VISIBLE_TASK_TAGS = 3;
@@ -635,6 +662,11 @@ export default function Home() {
     [currentDate, viewMode, dayOffMap]
   );
 
+  const periodDateKeys = useMemo(
+    () => new Set(calendarDays.map((day) => day.key)),
+    [calendarDays]
+  );
+
   const filteredTasks = useMemo(
     () => tasks.filter(task => {
       const status = task.status || "New";
@@ -645,18 +677,16 @@ export default function Home() {
       }
       
       // For completed tasks (Resolved/Closed), only show if they have tracked time in current period
-      const completedStatuses = ["Resolved", "Closed"];
-      if (completedStatuses.includes(status)) {
-        const periodDates = new Set(calendarDays.map(day => day.key));
+      if (COMPLETED_STATUSES.has(status.toLowerCase())) {
         const hasTimeInPeriod = Object.entries(task.timeEntries).some(
-          ([date, hours]) => periodDates.has(date) && hours > 0
+          ([date, hours]) => periodDateKeys.has(date) && hours > 0
         );
         return hasTimeInPeriod;
       }
       
       return true;
     }),
-    [tasks, visibleStatuses, calendarDays]
+    [tasks, visibleStatuses, periodDateKeys]
   );
 
   const totalHoursByTask = useMemo(

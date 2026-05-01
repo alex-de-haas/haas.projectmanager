@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import type { Project } from "@/types";
 import { getRequestUserId } from "@/lib/user-context";
+import { getProjectsForUser } from "@/lib/projects";
 
 const canManageProject = (userId: number, projectOwnerUserId: number): boolean => {
   if (userId === projectOwnerUserId) return true;
@@ -16,27 +17,7 @@ const canManageProject = (userId: number, projectOwnerUserId: number): boolean =
 export async function GET(request: NextRequest) {
   try {
     const userId = getRequestUserId(request);
-    const projects = db
-      .prepare(`
-        SELECT p.*
-        FROM projects p
-        INNER JOIN project_members pm ON pm.project_id = p.id
-        WHERE pm.user_id = ?
-        ORDER BY p.created_at ASC, p.id ASC
-      `)
-      .all(userId) as Project[];
-
-    const result = projects.map((project) => {
-      const members = db
-        .prepare("SELECT user_id FROM project_members WHERE project_id = ? ORDER BY user_id ASC")
-        .all(project.id) as Array<{ user_id: number }>;
-
-      return {
-        ...project,
-        member_user_ids: members.map((member) => member.user_id),
-      };
-    });
-    return NextResponse.json(result);
+    return NextResponse.json(getProjectsForUser(userId));
   } catch (error) {
     console.error("Database error:", error);
     return NextResponse.json({ error: "Failed to fetch projects" }, { status: 500 });

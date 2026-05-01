@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_STORAGE_KEY = "projectManager.sidebarMode";
+const PROJECT_COOKIE_NAME = "pm_project_id";
 
 type SidebarMode = "compact" | "normal";
 
@@ -48,6 +49,12 @@ interface AppProject {
   id: number;
   name: string;
   member_user_ids?: number[];
+}
+
+interface SidebarProps {
+  initialUser?: AppUser | null;
+  initialProjects?: AppProject[];
+  initialActiveProjectId?: string;
 }
 
 const getProjectInitials = (name?: string): string => {
@@ -79,19 +86,17 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({
+  initialUser = null,
+  initialProjects = [],
+  initialActiveProjectId = "",
+}: SidebarProps) {
   const pathname = usePathname();
   const [mode, setMode] = useState<SidebarMode>("compact");
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
-  const [projects, setProjects] = useState<AppProject[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState<string>("");
+  const [activeProjectId, setActiveProjectId] = useState<string>(initialActiveProjectId);
   const isAuthRoute = pathname === "/login" || pathname === "/invite";
-
-  const getCookieValue = (key: string) => {
-    const parts = document.cookie.split(";").map((item) => item.trim());
-    const found = parts.find((part) => part.startsWith(`${key}=`));
-    return found ? decodeURIComponent(found.split("=").slice(1).join("=")) : "";
-  };
+  const currentUser = initialUser;
+  const projects = initialProjects;
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -103,39 +108,6 @@ export default function Sidebar() {
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, mode);
   }, [mode]);
-
-  useEffect(() => {
-    if (isAuthRoute) return;
-
-    const loadSessionAndProjects = async () => {
-      try {
-        const [sessionResponse, projectsResponse] = await Promise.all([
-          fetch("/api/auth/session"),
-          fetch("/api/projects"),
-        ]);
-
-        if (sessionResponse.ok) {
-          const data = (await sessionResponse.json()) as { user?: AppUser };
-          setCurrentUser(data.user ?? null);
-        }
-
-        if (projectsResponse.ok) {
-          const projectData = (await projectsResponse.json()) as AppProject[];
-          setProjects(projectData);
-          const cookieProjectId = getCookieValue("pm_project_id");
-          const defaultProjectId = projectData[0] ? String(projectData[0].id) : "";
-          const selectedId = projectData.some((project) => String(project.id) === cookieProjectId)
-            ? cookieProjectId
-            : defaultProjectId;
-          setActiveProjectId(selectedId);
-        }
-      } catch (error) {
-        console.error("Failed to load sidebar context:", error);
-      }
-    };
-
-    loadSessionAndProjects();
-  }, [isAuthRoute]);
 
   const isCompact = mode === "compact";
   const activeProject =
@@ -164,7 +136,7 @@ export default function Sidebar() {
     if (!value || value === activeProjectId) return;
 
     setActiveProjectId(value);
-    document.cookie = `pm_project_id=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+    document.cookie = `${PROJECT_COOKIE_NAME}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
     window.location.reload();
   };
 
