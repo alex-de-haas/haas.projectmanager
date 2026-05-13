@@ -16,7 +16,7 @@ The application is organized around a few core workflows:
 
 ## Tech Stack
 
-- Next.js 14 with App Router
+- Next.js 16 with App Router
 - TypeScript
 - SQLite with `better-sqlite3`
 - Tailwind CSS and Radix UI
@@ -27,7 +27,7 @@ The application is organized around a few core workflows:
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 20.9 or newer
 - npm
 
 ## Setup

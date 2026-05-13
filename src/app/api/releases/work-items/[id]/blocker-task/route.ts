@@ -18,11 +18,12 @@ interface ReleaseWorkItemRow {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const userId = getRequestUserId(request);
     const projectId = getRequestProjectId(request, userId);
+    const params = await context.params;
     const id = Number(params.id);
 
     if (Number.isNaN(id)) {

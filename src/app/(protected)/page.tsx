@@ -1296,81 +1296,81 @@ export default function Home() {
 
       <div className="flex-1 overflow-hidden">
         <div className="overflow-auto h-full">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-muted border-b border-border sticky top-0 z-20">
-                <th className="p-3 sticky left-0 bg-muted dark:bg-muted z-[21]" style={{ width: "40px" }}>
-                  {/* Drag handle column */}
-                </th>
-                <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden" style={{ minWidth: "180px", maxWidth: "28vw" }}>
-                  {/* Empty for task names */}
-                </th>
-                {calendarDays.map((day) => {
-                  const headerClass = day.isToday
-                    ? "bg-orange-100 dark:bg-orange-950/50"
-                    : day.isDayOff
-                    ? "bg-purple-100 dark:bg-purple-950/50"
-                    : day.isWeekend
-                    ? "bg-slate-100 dark:bg-slate-900/70"
-                    : "bg-muted";
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-muted border-b border-border sticky top-0 z-20">
+                  <th className="p-3 sticky left-0 bg-muted dark:bg-muted z-[21]" style={{ width: "40px" }}>
+                    {/* Drag handle column */}
+                  </th>
+                  <th className="p-3 text-left font-normal text-muted-foreground text-sm sticky left-[40px] bg-muted dark:bg-muted z-[21] overflow-hidden" style={{ minWidth: "180px", maxWidth: "28vw" }}>
+                    {/* Empty for task names */}
+                  </th>
+                  {calendarDays.map((day) => {
+                    const headerClass = day.isToday
+                      ? "bg-orange-100 dark:bg-orange-950/50"
+                      : day.isDayOff
+                      ? "bg-purple-100 dark:bg-purple-950/50"
+                      : day.isWeekend
+                      ? "bg-slate-100 dark:bg-slate-900/70"
+                      : "bg-muted";
 
-                  const dayOffLabel = day.isHalfDay ? "Half day" : "Day off";
-                  const description = day.dayOff?.description;
-                  const title = day.isDayOff
-                    ? `${dayOffLabel}${description ? ` • ${description}` : ""}`
-                    : "";
+                    const dayOffLabel = day.isHalfDay ? "Half day" : "Day off";
+                    const description = day.dayOff?.description;
+                    const title = day.isDayOff
+                      ? `${dayOffLabel}${description ? ` • ${description}` : ""}`
+                      : "";
 
-                  const textClass = day.isToday
-                    ? "text-orange-600 dark:text-orange-400"
-                    : day.isDayOff
-                    ? "text-purple-700 dark:text-purple-400"
-                    : day.isWeekend
-                    ? "text-slate-700 dark:text-slate-100"
-                    : "text-foreground";
+                    const textClass = day.isToday
+                      ? "text-orange-600 dark:text-orange-400"
+                      : day.isDayOff
+                      ? "text-purple-700 dark:text-purple-400"
+                      : day.isWeekend
+                      ? "text-slate-700 dark:text-slate-100"
+                      : "text-foreground";
 
-                  const subTextClass = day.isToday
-                    ? "text-orange-600 dark:text-orange-400"
-                    : day.isDayOff
-                    ? "text-purple-600 dark:text-purple-400"
-                    : day.isWeekend
-                    ? "text-slate-600 dark:text-slate-300"
-                    : "text-muted-foreground";
+                    const subTextClass = day.isToday
+                      ? "text-orange-600 dark:text-orange-400"
+                      : day.isDayOff
+                      ? "text-purple-600 dark:text-purple-400"
+                      : day.isWeekend
+                      ? "text-slate-600 dark:text-slate-300"
+                      : "text-muted-foreground";
 
-                  return (
-                    <th
-                      key={day.key}
-                      className={`p-3 text-center font-normal text-sm ${headerClass}`}
-                      style={{ minWidth: "84px", width: "84px" }}
-                      title={title}
-                    >
-                      <div className={`font-medium ${textClass}`}>
-                        {format(day.date, "EEE")}
-                      </div>
-                      <div className={`text-xs ${subTextClass}`}>
-                        {format(day.date, "dd MMM")}
-                        {day.isDayOff && (
-                          <div className="text-[10px] font-medium flex items-center justify-center gap-1">
-                            <TreePalm className="w-3 h-3" />
-                            <span>{day.isHalfDay ? "Half Day" : "Day Off"}</span>
-                          </div>
-                        )}
-                      </div>
-                    </th>
-                  );
-                })}
-                <th
-                  className="p-3 text-center font-normal text-muted-foreground text-sm bg-muted dark:bg-muted sticky right-0 z-[21]"
-                  style={{ minWidth: "84px", width: "84px" }}
-                >
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
+                    return (
+                      <th
+                        key={day.key}
+                        className={`p-3 text-center font-normal text-sm ${headerClass}`}
+                        style={{ minWidth: "84px", width: "84px" }}
+                        title={title}
+                      >
+                        <div className={`font-medium ${textClass}`}>
+                          {format(day.date, "EEE")}
+                        </div>
+                        <div className={`text-xs ${subTextClass}`}>
+                          {format(day.date, "dd MMM")}
+                          {day.isDayOff && (
+                            <div className="text-[10px] font-medium flex items-center justify-center gap-1">
+                              <TreePalm className="w-3 h-3" />
+                              <span>{day.isHalfDay ? "Half Day" : "Day Off"}</span>
+                            </div>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th
+                    className="p-3 text-center font-normal text-muted-foreground text-sm bg-muted dark:bg-muted sticky right-0 z-[21]"
+                    style={{ minWidth: "84px", width: "84px" }}
+                  >
+                    Total
+                  </th>
+                </tr>
+              </thead>
               <SortableContext
                 items={filteredTasks.map((t) => t.id)}
                 strategy={verticalListSortingStrategy}
@@ -1774,8 +1774,7 @@ export default function Home() {
                   })}
                 </tbody>
               </SortableContext>
-            </DndContext>
-            <tfoot>
+              <tfoot>
               <tr className="bg-muted border-t-2 border-border sticky bottom-0 z-10">
                 <td className="p-3 sticky left-0 bg-muted dark:bg-muted z-[11]" style={{ width: "40px" }}>
                   {/* Empty drag handle cell */}
@@ -1827,8 +1826,9 @@ export default function Home() {
                   </div>
                 </td>
               </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </DndContext>
         </div>
       </div>
 
