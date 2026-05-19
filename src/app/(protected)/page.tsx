@@ -85,6 +85,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
 const WorkItemModal = dynamic(
@@ -464,6 +465,9 @@ export default function Home() {
     date: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [isTaskDragActive, setIsTaskDragActive] = useState(false);
+  const trackerScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const lockedTrackerScrollLeftRef = useRef<number | null>(null);
   
   const [visibleStatuses, setVisibleStatuses] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
@@ -545,7 +549,36 @@ export default function Home() {
     })
   );
 
+  const restoreLockedTrackerScrollLeft = useCallback(() => {
+    const scrollContainer = trackerScrollContainerRef.current;
+    const lockedScrollLeft = lockedTrackerScrollLeftRef.current;
+
+    if (!scrollContainer || lockedScrollLeft === null) {
+      return;
+    }
+
+    if (scrollContainer.scrollLeft !== lockedScrollLeft) {
+      scrollContainer.scrollLeft = lockedScrollLeft;
+    }
+  }, []);
+
+  const handleDragStart = useCallback(() => {
+    const scrollContainer = trackerScrollContainerRef.current;
+    lockedTrackerScrollLeftRef.current = scrollContainer?.scrollLeft ?? null;
+    setIsTaskDragActive(true);
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    restoreLockedTrackerScrollLeft();
+    lockedTrackerScrollLeftRef.current = null;
+    setIsTaskDragActive(false);
+  }, [restoreLockedTrackerScrollLeft]);
+
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    restoreLockedTrackerScrollLeft();
+    lockedTrackerScrollLeftRef.current = null;
+    setIsTaskDragActive(false);
+
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
@@ -574,7 +607,25 @@ export default function Home() {
         return newItems;
       });
     }
-  }, [fetchTasks]);
+  }, [fetchTasks, restoreLockedTrackerScrollLeft]);
+
+  useEffect(() => {
+    if (!isTaskDragActive) {
+      return;
+    }
+
+    const scrollContainer = trackerScrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const handleScroll = () => {
+      restoreLockedTrackerScrollLeft();
+    };
+
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", handleScroll);
+  }, [isTaskDragActive, restoreLockedTrackerScrollLeft]);
 
   useEffect(() => {
     fetchTasks(true);
@@ -1295,11 +1346,14 @@ export default function Home() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <div className="overflow-auto h-full">
+        <div ref={trackerScrollContainerRef} className="overflow-auto h-full">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
             <table className="w-full border-collapse">
               <thead>
